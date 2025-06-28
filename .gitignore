@@ -1,0 +1,39 @@
+# === 自动生成的 ROS 目录 ===
+devel/
+build/
+install/
+*.build/
+*.devel/
+*.install/
+
+# === 编译生成文件 ===
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.o
+*.a
+
+# === 系统/IDE 文件 ===
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/
+*.orig
+
+# === 日志文件 ===
+*.log
+*.bag
+*.pgm
+*.yaml
+
+# === Unity 模拟器输出 ===
+# src/simulation/unity_sim/Build_Ubuntu/
+
+# === 特定 ROS 生成文件 ===
+# *.msg
+# *.srv
+.catkin_workspace
+CATKIN_IGNORE
