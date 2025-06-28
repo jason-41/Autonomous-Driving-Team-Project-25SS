@@ -1,6 +1,7 @@
 # === 自动生成的 ROS 目录 ===
 devel/
 build/
+logs/
 install/
 *.build/
 *.devel/
@@ -36,4 +37,5 @@ __pycache__/
 # *.msg
 # *.srv
 .catkin_workspace
+.catkin_tools/
 CATKIN_IGNORE
