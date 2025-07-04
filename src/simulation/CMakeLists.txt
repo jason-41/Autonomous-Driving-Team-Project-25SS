@@ -57,10 +57,12 @@ add_subdirectory(tcpimage)
 add_executable(unity_TCP_stream_receiver src/unity_TCP_stream_receiver.cpp)
 add_executable(ROS_command_transmitter src/ROS_command_transmitter.cpp)
 add_executable(JSON_param_reader src/JSON_param_reader.cpp)
+add_executable(traffic_light_recognition_node src/traffic_light_recognition.cpp)
 
 target_link_libraries(unity_TCP_stream_receiver ${catkin_LIBRARIES} tcpstreamreader tcpimage)
 target_link_libraries(ROS_command_transmitter ${catkin_LIBRARIES} socket++ -pthread)
 target_link_libraries(JSON_param_reader  ${catkin_LIBRARIES})
+target_link_libraries(traffic_light_recognition_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 add_dependencies(ROS_command_transmitter libsocket ${catkin_EXPORTED_TARGETS})
 
