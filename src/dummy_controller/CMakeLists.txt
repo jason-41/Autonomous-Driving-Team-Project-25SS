@@ -7,6 +7,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   simulation
+  tf2
+  tf2_ros
 )
 
 
@@ -17,7 +19,7 @@ catkin_package(
 #  LIBRARIES dummy_controller
 #  CATKIN_DEPENDS mav_msgs roscpp std_msgs
 #  DEPENDS system_lib
-  CATKIN_DEPENDS simulation roscpp std_msgs
+  CATKIN_DEPENDS simulation roscpp std_msgs tf2_ros
 )
 
 
@@ -30,3 +32,7 @@ include_directories(
 add_executable(dummy_controller_node src/dummy_controller_node.cpp)
 target_link_libraries(dummy_controller_node ${catkin_LIBRARIES})
 
+add_dependencies(dummy_controller_node
+  ${catkin_EXPORTED_TARGETS}
+  simulation_generate_messages_cpp
+)
