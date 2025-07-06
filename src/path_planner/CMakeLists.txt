@@ -123,12 +123,13 @@ include_directories(
 
 ## Declare C++ executable
 add_executable(path_planner_node src/path_planner_node.cpp)
+add_executable(pose_recorder_node src/pose_recorder.cpp)
+add_executable(short_term_planner_node src/short_term_planner.cpp)
 
 ## Specify libraries to link executable against
-target_link_libraries(path_planner_node
-  ${catkin_LIBRARIES}
-)
-
+target_link_libraries(path_planner_node ${catkin_LIBRARIES})
+target_link_libraries(pose_recorder_node ${catkin_LIBRARIES})
+target_link_libraries(short_term_planner_node ${catkin_LIBRARIES})
 ## Optionally add dependencies (如果你有消息生成或其他目标)
 # add_dependencies(path_planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 

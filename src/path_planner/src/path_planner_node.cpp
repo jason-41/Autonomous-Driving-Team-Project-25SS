@@ -16,7 +16,6 @@ struct Node {
 
     float totalCost() const { return cost + heuristic; }
 
-    // 比较器，用于优先队列
     bool operator<(const Node& other) const {
         return totalCost() > other.totalCost();  // 小顶堆
     }
@@ -24,10 +23,12 @@ struct Node {
 
 class PathPlanner {
 public:
-    PathPlanner() {
+    PathPlanner() : map_received_(false), car_pose_received_(false), goal_received_(false) {
         ros::NodeHandle nh;
         map_sub_ = nh.subscribe("/projected_map", 1, &PathPlanner::mapCallback, this);
         path_pub_ = nh.advertise<nav_msgs::Path>("planned_path", 1, true);
+        car_pose_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &PathPlanner::carPoseCallback, this);
+        goal_sub_ = nh.subscribe("/move_base_simple/goal", 1, &PathPlanner::goalCallback, this);
     }
 
     void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
@@ -37,36 +38,51 @@ public:
         resolution_ = map_.info.resolution;
         origin_x_ = map_.info.origin.position.x;
         origin_y_ = map_.info.origin.position.y;
+        map_received_ = true;
 
         ROS_INFO("Map received: %d x %d", width_, height_);
-
-        // 暂时给定起点终点（可后续改为参数或订阅）
-        int start_x = (int)((-62.80 - origin_x_) / resolution_);
-        int start_y = (int)((-10 - origin_y_) / resolution_);
-        // int goal_x = width_ - 10, goal_y = height_ - 10;
-        int goal_x = (int)((-61.9 - origin_x_) / resolution_);
-        int goal_y = (int)((8 - origin_y_) / resolution_);
-        
-        ROS_INFO("Start grid: (%d, %d)", start_x, start_y);
-        ROS_INFO("Goal01 grid: (%d, %d)", goal_x, goal_y);
-
-        if (start_x < 0 || start_x >= width_ || start_y < 0 || start_y >= height_) {
-            ROS_ERROR("Start grid out of bounds: (%d, %d)", start_x, start_y);
-            return;
-        }
-        if (goal_x < 0 || goal_x >= width_ || goal_y < 0 || goal_y >= height_) {
-            ROS_ERROR("Goal grid out of bounds: (%d, %d)", goal_x, goal_y);
-            return;
-        }
-
-        computePath(start_x, start_y, goal_x, goal_y);
     }
 
-    void computePath(int start_x, int start_y, int goal_x, int goal_y) {
+    void carPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+        car_x_ = (msg->pose.position.x - origin_x_) / resolution_;
+        car_y_ = (msg->pose.position.y - origin_y_) / resolution_;
+        car_pose_received_ = true;
+
+        ROS_INFO("Current car grid: (%d, %d)", car_x_, car_y_);
+
+        if (map_received_ && car_pose_received_ && goal_received_) {
+            computePath();
+        }
+    }
+
+    void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+        goal_x_ = (msg->pose.position.x - origin_x_) / resolution_;
+        goal_y_ = (msg->pose.position.y - origin_y_) / resolution_;
+        goal_received_ = true;
+
+        ROS_INFO("Goal grid received: (%d, %d)", goal_x_, goal_y_);
+
+        if (map_received_ && car_pose_received_) {
+            computePath();
+        } else {
+            ROS_WARN("Cannot compute path yet, waiting for map and car position.");
+        }
+    }
+
+    void computePath() {
+        if (car_x_ < 0 || car_x_ >= width_ || car_y_ < 0 || car_y_ >= height_) {
+            ROS_ERROR("Start grid out of bounds: (%d, %d)", car_x_, car_y_);
+            return;
+        }
+        if (goal_x_ < 0 || goal_x_ >= width_ || goal_y_ < 0 || goal_y_ >= height_) {
+            ROS_ERROR("Goal grid out of bounds: (%d, %d)", goal_x_, goal_y_);
+            return;
+        }
+
         std::priority_queue<Node> open_list;
         std::vector<bool> closed_list(width_ * height_, false);
 
-        Node* start_node = new Node(start_x, start_y, 0, heuristic(start_x, start_y, goal_x, goal_y));
+        Node* start_node = new Node(car_x_, car_y_, 0, heuristic(car_x_, car_y_, goal_x_, goal_y_));
         open_list.push(*start_node);
 
         Node* goal_node = nullptr;
@@ -79,7 +95,7 @@ public:
             if (closed_list[idx]) continue;
             closed_list[idx] = true;
 
-            if (current.x == goal_x && current.y == goal_y) {
+            if (current.x == goal_x_ && current.y == goal_y_) {
                 ROS_INFO("Goal reached!");
                 goal_node = new Node(current);
                 break;
@@ -99,7 +115,7 @@ public:
                     continue;
 
                 float new_cost = current.cost + distance(current.x, current.y, nx, ny);
-                float h = heuristic(nx, ny, goal_x, goal_y);
+                float h = heuristic(nx, ny, goal_x_, goal_y_);
                 Node* neighbor = new Node(nx, ny, new_cost, h, new Node(current));
                 open_list.push(*neighbor);
             }
@@ -132,10 +148,18 @@ public:
 private:
     ros::Subscriber map_sub_;
     ros::Publisher path_pub_;
+    ros::Subscriber car_pose_sub_;
+    ros::Subscriber goal_sub_;
     nav_msgs::OccupancyGrid map_;
     int width_, height_;
     double resolution_;
     double origin_x_, origin_y_;
+    int car_x_, car_y_;
+    int goal_x_, goal_y_;
+
+    bool map_received_ = false;
+    bool car_pose_received_ = false;
+    bool goal_received_ = false;
 
     const std::vector<std::vector<int>> directions_ = {
         {1,0}, {-1,0}, {0,1}, {0,-1},
