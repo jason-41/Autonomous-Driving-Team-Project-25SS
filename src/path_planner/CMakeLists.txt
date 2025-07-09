@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   roscpp
   std_msgs
+  roslib
 )
 
 ## System dependencies are found with CMake's conventions
@@ -107,6 +108,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES path_planner
 #  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp std_msgs
+CATKIN_DEPENDS roscpp geometry_msgs nav_msgs roslib
 #  DEPENDS system_lib
 )
 
@@ -130,6 +132,7 @@ add_executable(short_term_planner_node src/short_term_planner.cpp)
 target_link_libraries(path_planner_node ${catkin_LIBRARIES})
 target_link_libraries(pose_recorder_node ${catkin_LIBRARIES})
 target_link_libraries(short_term_planner_node ${catkin_LIBRARIES})
+
 ## Optionally add dependencies (如果你有消息生成或其他目标)
 # add_dependencies(path_planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
@@ -199,11 +202,10 @@ target_link_libraries(short_term_planner_node ${catkin_LIBRARIES})
 # )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-# install(FILES
-#   # myfile1
-#   # myfile2
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+install(FILES
+   car_positions.txt
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+ )
 
 #############
 ## Testing ##

@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <ros/package.h>
 #include <cmath>
 
 class ShortTermPlanner {
@@ -13,7 +14,11 @@ public:
         sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10, &ShortTermPlanner::poseCallback, this);
         pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 10);
 
-        const std::string filepath = "/tmp/car_positions.txt";
+        //const std::string filepath = "/tmp/car_positions.txt";
+        // 从当前包（假设名为 short_term_planner）根目录下寻找 car_position.txt
+        std::string pkg_path = ros::package::getPath("path_planner");
+        const std::string filepath = pkg_path + "/car_positions.txt";
+
         if (!loadTargetPositions(filepath)) {
             ROS_ERROR("Failed to load target positions from %s", filepath.c_str());
             ros::shutdown();
