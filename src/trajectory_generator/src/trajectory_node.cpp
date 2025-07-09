@@ -3,6 +3,9 @@
 #include <trajectory_msgs/MultiDOFJointTrajectory.h>
 #include <geometry_msgs/Transform.h>
 #include <geometry_msgs/Twist.h>
+"""
+需要进一步讨论trajectory到controller的信息。2025-07-09
+"""
 
 class TrajectoryGenerator {
 public:
