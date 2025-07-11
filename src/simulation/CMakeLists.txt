@@ -34,7 +34,15 @@ generate_messages(
 )
 
 catkin_package(CATKIN_DEPENDS
-        message_runtime        
+        message_runtime
+        geometry_msgs
+        roscpp
+        rospy
+        sensor_msgs
+        std_msgs
+        tf
+        image_transport
+        cv_bridge        
 )
 
 include(ExternalProject)
