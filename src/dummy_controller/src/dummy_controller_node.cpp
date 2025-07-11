@@ -6,6 +6,7 @@
 #include <tf/tf.h>
 #include <cmath>
 #include <algorithm>  // for std::clamp
+#include <iomanip>
 
 class DummyPIDController
 {
@@ -51,6 +52,24 @@ public:
                 cmd.Brake = 1.0;
                 cmd.Steering = 0.0;
             } else {
+              // === 判断目标是否在车后方 ===
+                double dx = target_pose_.pose.position.x - current_pose_.pose.position.x;
+                double dy = target_pose_.pose.position.y - current_pose_.pose.position.y;
+                double current_yaw = tf::getYaw(current_pose_.pose.orientation);
+                double heading_x = std::cos(current_yaw);
+                double heading_y = std::sin(current_yaw);
+                double dot = dx * heading_x + dy * heading_y;
+
+                if (dot < 0) {
+                    ROS_WARN_STREAM("The target point is behind the car, ignore it");
+                    cmd.Throttle = 0.0;
+                    cmd.Brake = 1.0;
+                    cmd.Steering = 0.0;
+                    cmd_pub_.publish(cmd);
+                    ros::spinOnce();
+                    loop_rate.sleep();
+                    continue;
+                }
                 // === PID 控制速度 ===
                 double target_speed = target_velocity_.twist.linear.x;
                 double current_speed = current_twist_.twist.linear.x;
@@ -60,30 +79,49 @@ public:
                 double speed_derivative = (speed_error - prev_speed_error_) / dt;
                 prev_speed_error_ = speed_error;
 
-                double Kp_v = 0.6, Ki_v = 0.1, Kd_v = 0.01;
-                cmd.Throttle = Kp_v * speed_error + Ki_v * speed_integral_ + Kd_v * speed_derivative;
-                cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 1.0f);
-                cmd.Brake = 0.0;
+                double Kp_v = 0.3, Ki_v = 0.1, Kd_v = 0.01;
+
+               if (speed_error >= 0) {
+                  // 当前车速低于目标速度：给油门
+                  cmd.Throttle = Kp_v * speed_error + Ki_v * speed_integral_ + Kd_v * speed_derivative;
+                  cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 0.5f);
+                  cmd.Brake = 0.0;
+                } else {
+                  // 当前车速高于目标速度：刹车
+                  cmd.Throttle = 0.0;
+                  cmd.Brake = std::clamp(0.8 * (-speed_error), 0.0, 1.0);
+
+                }
+
 
                 // === PID 控制方向 ===
-                double dx = target_pose_.pose.position.x - current_pose_.pose.position.x;
-                double dy = target_pose_.pose.position.y - current_pose_.pose.position.y;
                 double desired_yaw = std::atan2(dy, dx);
-                double current_yaw = tf::getYaw(current_pose_.pose.orientation);
-                double steer_error = desired_yaw - current_yaw;
+                double steer_error = current_yaw - desired_yaw;//negative number turns left, positive number turns right
 
                 while (steer_error > M_PI) steer_error -= 2 * M_PI;
                 while (steer_error < -M_PI) steer_error += 2 * M_PI;
-
+                // 插入调试输出
+                ROS_INFO_STREAM("current_yaw: " << current_yaw 
+                             << ", desired_yaw: " << desired_yaw 
+                             << ", steer_error: " << steer_error);
                 steer_integral_ += steer_error * dt;
                 double steer_derivative = (steer_error - prev_steer_error_) / dt;
                 prev_steer_error_ = steer_error;
 
-                double Kp_s = 1.5, Ki_s = 0.0, Kd_s = 0.1;
+                double Kp_s = 0.6, Ki_s = 0.0, Kd_s = 0.05;
                 cmd.Steering = Kp_s * steer_error + Ki_s * steer_integral_ + Kd_s * steer_derivative;
                 cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
+                 // 插入调试输出
+                 ROS_INFO_STREAM("Steer error: " << steer_error 
+                            << ", P: " << Kp_s * steer_error 
+                            << ", D: " << Kd_s * steer_derivative 
+                            << ", Steering(before clamp): " 
+                            << (Kp_s * steer_error + Kd_s * steer_derivative));
             }
-
+            // 插入调试输出
+            ROS_INFO_STREAM("Publishing cmd => Throttle: " << cmd.Throttle
+                        << ", Brake: " << cmd.Brake
+                        << ", Steering: " << cmd.Steering);
             cmd_pub_.publish(cmd);
             ros::spinOnce();
             loop_rate.sleep();
@@ -128,13 +166,17 @@ private:
     void targetCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
         target_pose_ = *msg;
         target_pose_received_ = true;
-        ROS_INFO_STREAM("Target pose received: x = " << msg->pose.position.x << ", y = " << msg->pose.position.y);
+        ROS_INFO_STREAM(std::fixed << std::setprecision(4) << "Target pose received: x = " << msg->pose.position.x << ", y = " << msg->pose.position.y);
     }
     
     void velocityCallback(const geometry_msgs::TwistStamped::ConstPtr& msg) {
         target_velocity_ = *msg;
+        // 限制目标速度不超过 0.2 m/s
+        if (target_velocity_.twist.linear.x > 0.2) {
+            target_velocity_.twist.linear.x = 0.2;
+        }
         target_velocity_received_ = true;
-        ROS_INFO_STREAM("Target velocity received: linear x = " << msg->twist.linear.x);
+        ROS_INFO_STREAM("Target velocity received (after clamp): x = " << target_velocity_.twist.linear.x);
     }
    
     void trafficCallback(const std_msgs::String::ConstPtr& msg) {
