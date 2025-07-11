@@ -11,7 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2
   tf2_ros
   geometry_msgs
-  message_runtime  #
+  message_runtime
 )
 
 # 声明 catkin 包
