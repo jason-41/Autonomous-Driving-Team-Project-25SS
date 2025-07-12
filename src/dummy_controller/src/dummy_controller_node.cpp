@@ -20,10 +20,10 @@ public:
         ros::NodeHandle nh;
 
         // === 订阅器 ===
-        pose_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &DummyPIDController::poseCallback, this);
-        twist_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/twist", 1, &DummyPIDController::twistCallback, this);
-        target_sub_ = nh.subscribe("/target_pose", 1, &DummyPIDController::targetCallback, this);
-        velocity_sub_ = nh.subscribe("/velocity", 1, &DummyPIDController::velocityCallback, this);
+        pose_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10, &DummyPIDController::poseCallback, this);
+        twist_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/twist", 10, &DummyPIDController::twistCallback, this);
+        target_sub_ = nh.subscribe("/target_pose", 10, &DummyPIDController::targetCallback, this);
+        velocity_sub_ = nh.subscribe("/velocity", 10, &DummyPIDController::velocityCallback, this);
         traffic_sub_ = nh.subscribe("/traffic_state", 1, &DummyPIDController::trafficCallback, this);
 
         cmd_pub_ = nh.advertise<simulation::VehicleControl>("car_command", 1);
@@ -33,16 +33,21 @@ public:
     {
         ros::Rate loop_rate(10);
         float dt = 0.1;
+        simulation::VehicleControl last_cmd;  // ← 保存上一次的命令
+        bool has_last = false;
 
         while (ros::ok())
         {
             simulation::VehicleControl cmd;
             cmd.Reserved = 0.0;
 
+            // 1) 先处理所有订阅回调，更新 current_pose_, target_pose_, target_velocity_
+            ros::spinOnce();
+
             if (!current_pose_received_ || !current_twist_received_ || !target_pose_received_) {
                 ROS_WARN_THROTTLE(1.0, "Waiting for pose/twist/target_pose/velocity");
                 cmd_pub_.publish(cmd);
-                ros::spinOnce();
+                //ros::spinOnce();
                 loop_rate.sleep();
                 continue;
             }
@@ -60,6 +65,7 @@ public:
                 double heading_y = std::sin(current_yaw);
                 double dot = dx * heading_x + dy * heading_y;
 
+                /*
                 if (dot < 0) {
                     ROS_WARN_STREAM("The target point is behind the car, ignore it");
                     cmd.Throttle = 0.0;
@@ -70,6 +76,17 @@ public:
                     loop_rate.sleep();
                     continue;
                 }
+                */
+                if (dot < 0) {
+                    ROS_WARN_THROTTLE(1.0, "Target behind, skipping update.");
+                    // ③ 如果已有上一次命令，就发它；否则倒退到默认
+                    if (has_last) cmd = last_cmd;
+                    cmd_pub_.publish(cmd);
+                    loop_rate.sleep();
+                    continue;
+                }
+
+                   
                 // === PID 控制速度 ===
                 double target_speed = target_velocity_.twist.linear.x;
                 double current_speed = current_twist_.twist.linear.x;
@@ -108,7 +125,7 @@ public:
                 double steer_derivative = (steer_error - prev_steer_error_) / dt;
                 prev_steer_error_ = steer_error;
 
-                double Kp_s = 0.6, Ki_s = 0.0, Kd_s = 0.05;
+                double Kp_s = 0.7, Ki_s = 0.0, Kd_s = 0.05;
                 cmd.Steering = Kp_s * steer_error + Ki_s * steer_integral_ + Kd_s * steer_derivative;
                 cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
                  // 插入调试输出
@@ -122,9 +139,13 @@ public:
             ROS_INFO_STREAM("Publishing cmd => Throttle: " << cmd.Throttle
                         << ", Brake: " << cmd.Brake
                         << ", Steering: " << cmd.Steering);
+
+            last_cmd = cmd;
+            has_last  = true;
             cmd_pub_.publish(cmd);
-            ros::spinOnce();
+    
             loop_rate.sleep();
+
         }
     }
 
