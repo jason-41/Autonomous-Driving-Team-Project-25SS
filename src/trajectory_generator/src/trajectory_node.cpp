@@ -12,31 +12,29 @@ class TrajectoryPlanner {
 public:
   TrajectoryPlanner() {
     ros::NodeHandle nh, pnh("~");
-    // 车辆几何与动力学参数（wheel_base 未在此使用，可按需扩展）
+    // 车辆参数
     pnh.param("wheel_base", L_, 2.63);
     pnh.param("v_max",     v_max_,    2.0);
     pnh.param("a_max",     a_max_,    1.0);
     pnh.param("a_lat_max", a_lat_max_,0.5);
     pnh.param("time_interval", time_interval_, 0.04);
 
-    path_sub_    = nh.subscribe("planned_path", 1, &TrajectoryPlanner::pathCallback, this);
-    vel_pub_     = nh.advertise<geometry_msgs::TwistStamped>("velocity", 10);
-    pose_pub_    = nh.advertise<geometry_msgs::PoseStamped>("target_pose", 10);
-    traj_timer_  = nh.createTimer(
-      ros::Duration(time_interval_),
-      &TrajectoryPlanner::timerCallback,
-      this);
+    path_sub_           = nh.subscribe("planned_path", 1, &TrajectoryPlanner::pathCallback, this);
+    current_pose_sub_   = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10, &TrajectoryPlanner::currentPoseCallback, this);
+    vel_pub_            = nh.advertise<geometry_msgs::TwistStamped>("velocity", 10);
+    pose_pub_           = nh.advertise<geometry_msgs::PoseStamped>("target_pose", 10);
+    traj_timer_         = nh.createTimer(ros::Duration(time_interval_), &TrajectoryPlanner::timerCallback, this);
 
-    active_ = false;
+    active_             = false;
+    current_pose_received_ = false;
   }
 
 private:
-  // 回调：接收一次完整路径并预计算所有插值数据
   void pathCallback(const nav_msgs::Path::ConstPtr& path_msg) {
     const auto &poses = path_msg->poses;
     N_ = poses.size();
     if (N_ < 3) {
-      ROS_WARN("需要至少3个路径点来计算曲率，当前：%d", N_);
+      ROS_WARN("需要至少3个路径点来计算曲率，当前：%zu", N_);
       active_ = false;
       return;
     }
@@ -45,7 +43,7 @@ private:
     yaws_.resize(N_);
     std::vector<double> ds(N_-1);
 
-    // 提取点坐标及航向
+    // 提取路径点及航向
     for (int i = 0; i < N_; ++i) {
       xs_[i] = poses[i].pose.position.x;
       ys_[i] = poses[i].pose.position.y;
@@ -58,7 +56,7 @@ private:
     }
     yaws_[N_-1] = yaws_[N_-2];
 
-    // 计算曲率 k_ 和速度上限 v_limit
+    // 计算曲率 k_ 与速度限制 v_limit
     k_.assign(N_, 0.0);
     std::vector<double> v_limit(N_, v_max_);
     for (int i = 1; i < N_-1; ++i) {
@@ -68,7 +66,7 @@ private:
     }
     v_limit[0] = v_limit[N_-1] = 0.0;
 
-    // 前后向加速度限幅，生成速度剖面 v_
+    // 生成前向/后向加速度限幅的速度剖面 v_
     v_.assign(N_, 0.0);
     for (int i = 1; i < N_; ++i) {
       v_[i] = std::min(v_limit[i], std::sqrt(v_[i-1]*v_[i-1] + 2 * a_max_ * ds[i-1]));
@@ -77,25 +75,50 @@ private:
       v_[i] = std::min(v_[i], std::sqrt(v_[i+1]*v_[i+1] + 2 * a_max_ * ds[i]));
     }
 
-    // 时间戳分配 t_
+    // 生成时间戳 t_
     t_.assign(N_, 0.0);
     for (int i = 1; i < N_; ++i) {
       double dt = (v_[i] > 1e-3) ? (ds[i-1] / v_[i]) : time_interval_;
       t_[i] = t_[i-1] + dt;
     }
 
-    frame_id_   = path_msg->header.frame_id;
-    cur_idx_    = 0;
-    start_      = ros::Time::now();
-    active_     = true;
+    frame_id_ = path_msg->header.frame_id;
+    cur_idx_  = 0;
+    start_    = ros::Time::now();
+    active_   = true;
   }
 
-  // 定时器回调：按 time_interval_ 发布插值速度与位姿
-  void timerCallback(const ros::TimerEvent&) {
-    if (!active_) return;
-    double elapsed = (ros::Time::now() - start_).toSec();
+  void currentPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+    current_pose_ = *msg;
+    current_pose_received_ = true;
+  }
 
-    // 定位当前段索引 cur_idx_
+  void timerCallback(const ros::TimerEvent&) {
+    if (!active_ || !current_pose_received_) return;
+
+    // 1) 时间计算
+    ros::Time now = ros::Time::now();
+    double elapsed = (now - start_).toSec();
+
+    // 2) 最近点匹配，修正 cur_idx_
+    double cx = current_pose_.pose.position.x;
+    double cy = current_pose_.pose.position.y;
+    double min_d2 = std::numeric_limits<double>::infinity();
+    size_t best_i = cur_idx_;
+    for (size_t j = cur_idx_; j < N_; ++j) {
+      double dx = xs_[j] - cx;
+      double dy = ys_[j] - cy;
+      double d2 = dx*dx + dy*dy;
+      if (d2 < min_d2) {
+        min_d2 = d2;
+        best_i = j;
+      } else {
+        break;
+      }
+    }
+    cur_idx_ = best_i;
+
+    // 3) 时间推进
     while (cur_idx_ + 1 < N_ && elapsed > t_[cur_idx_+1]) {
       ++cur_idx_;
     }
@@ -105,20 +128,21 @@ private:
       return;
     }
 
-    double dt_seg = t_[cur_idx_+1] - t_[cur_idx_];
-    double alpha  = (dt_seg > 1e-6)
-                    ? (elapsed - t_[cur_idx_]) / dt_seg
-                    : 0.0;
+    // 4) 重新对齐 start_
+    start_ = now - ros::Duration(t_[cur_idx_]);
 
-    // 插值计算
+    // 5) 插值计算
+    double dt_seg = t_[cur_idx_+1] - t_[cur_idx_];
+    double alpha = (dt_seg > 1e-6) ? (elapsed - t_[cur_idx_]) / dt_seg : 0.0;
+
     double x       = xs_[cur_idx_] + alpha * (xs_[cur_idx_+1] - xs_[cur_idx_]);
     double y       = ys_[cur_idx_] + alpha * (ys_[cur_idx_+1] - ys_[cur_idx_]);
     double yaw     = yaws_[cur_idx_] + alpha * (yaws_[cur_idx_+1] - yaws_[cur_idx_]);
     double vel_lin = v_[cur_idx_]   + alpha * (v_[cur_idx_+1]   - v_[cur_idx_]);
 
-    // 发布目标位姿
+    // 发布 target_pose
     geometry_msgs::PoseStamped ps;
-    ps.header.stamp    = ros::Time::now();
+    ps.header.stamp    = now;
     ps.header.frame_id = frame_id_;
     ps.pose.position.x = x;
     ps.pose.position.y = y;
@@ -127,14 +151,13 @@ private:
 
     // 发布速度指令
     geometry_msgs::TwistStamped cmd;
-    cmd.header.stamp    = ps.header.stamp;
+    cmd.header.stamp    = now;
     cmd.header.frame_id = frame_id_;
     cmd.twist.linear.x  = vel_lin;
     cmd.twist.angular.z = vel_lin * k_[cur_idx_];
     vel_pub_.publish(cmd);
   }
 
-  // 发布停止指令和最后位置
   void publishStop() {
     geometry_msgs::TwistStamped stop;
     stop.header.stamp    = ros::Time::now();
@@ -151,7 +174,6 @@ private:
     pose_pub_.publish(last);
   }
 
-  // 三点法计算曲率
   double computeCurvature(double x0, double y0,
                           double x1, double y1,
                           double x2, double y2) {
@@ -163,8 +185,8 @@ private:
     return 4.0 * area / (a * b * c);
   }
 
-  // 成员变量
-  ros::Subscriber            path_sub_;
+private:
+  ros::Subscriber            path_sub_, current_pose_sub_;
   ros::Publisher             vel_pub_, pose_pub_;
   ros::Timer                 traj_timer_;
 
@@ -174,7 +196,12 @@ private:
   ros::Time                  start_;
   std::string                frame_id_;
 
-  double                     L_, v_max_, a_max_, a_lat_max_, time_interval_;
+  // 实时反馈
+  geometry_msgs::PoseStamped current_pose_;
+  bool                       current_pose_received_{false};
+
+  // 参数
+  double L_, v_max_, a_max_, a_lat_max_, time_interval_;
 };
 
 int main(int argc, char** argv) {

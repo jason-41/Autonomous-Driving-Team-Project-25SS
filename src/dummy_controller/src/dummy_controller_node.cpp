@@ -1,3 +1,4 @@
+//13-07-2025 19:48
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
@@ -7,6 +8,8 @@
 #include <cmath>
 #include <algorithm>  // for std::clamp
 #include <iomanip>
+#include <angles/angles.h>
+
 
 class DummyPIDController
 {
@@ -80,10 +83,12 @@ public:
                 if (dot < 0) {
                     ROS_WARN_THROTTLE(1.0, "Target behind, skipping update.");
                     // ③ 如果已有上一次命令，就发它；否则倒退到默认
+                    /*
                     if (has_last) cmd = last_cmd;
                     cmd_pub_.publish(cmd);
                     loop_rate.sleep();
                     continue;
+                    */
                 }
 
                    
@@ -113,7 +118,10 @@ public:
 
                 // === PID 控制方向 ===
                 double desired_yaw = std::atan2(dy, dx);
-                double steer_error = current_yaw - desired_yaw;//negative number turns left, positive number turns right
+                //double steer_error = current_yaw - desired_yaw;//negative number turns left, positive number turns right
+
+                double steer_error = angles::shortest_angular_distance(current_yaw, desired_yaw);// 计算当前航向与目标航向的最短角度差
+                // 确保 steer_error 在 -π 到 π 之间
 
                 while (steer_error > M_PI) steer_error -= 2 * M_PI;
                 while (steer_error < -M_PI) steer_error += 2 * M_PI;
