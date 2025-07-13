@@ -100,6 +100,10 @@ private:
     end_x_ = xs_.back(); end_y_ = ys_.back();
     hold_flag_ = false; hold_vel_ = 0.0;
     reached_flag_ = false;
+
+    ROS_INFO_STREAM("Received path with " << N_ << " points. "
+      << "Start: (" << xs_.front() << ", " << ys_.front() << ")"
+      << ", End: (" << xs_.back() << ", " << ys_.back() << ")");
   }
 
   void currentPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
@@ -173,6 +177,20 @@ private:
     cmd.twist.linear.x = vel_lin;
     cmd.twist.angular.z = vel_lin * k_[std::min(cur_idx_, N_-1)];
     vel_pub_.publish(cmd);
+
+    double yaw = tf::getYaw(current_pose_.pose.orientation);
+    ROS_INFO_STREAM("Current position: x = " << cx 
+                                        << ", y = " << cy
+                                        << ", yaw = " << yaw    
+                                        << ", velocity = " << vel_lin);
+
+    ROS_INFO_STREAM("Target pose: x = " << ps.pose.position.x 
+                                        << ", y = " << ps.pose.position.y 
+                                        << ", orientation = " << tf::getYaw(ps.pose.orientation));
+    ROS_INFO_STREAM("Target velocity: linear = " << cmd.twist.linear.x 
+                                                  << ", angular = " << cmd.twist.angular.z);
+    ROS_INFO_STREAM("Current curvature: " << k_[cur_idx_]
+                                          << ", Velocity limit: " << v_[cur_idx_]);
   }
 
   void publishStop() {

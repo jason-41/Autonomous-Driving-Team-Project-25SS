@@ -56,7 +56,7 @@ public:
             speed_integral_ += speed_error * dt;
             double speed_derivative = (speed_error - prev_speed_error_) / dt;
             prev_speed_error_ = speed_error;
-            double Kp_v = 20, Ki_v = 0.0, Kd_v = 0.0;
+            double Kp_v = 40, Ki_v = 0.0, Kd_v = 0.0;
             if (speed_error >= 0) {
                 cmd.Throttle = Kp_v * speed_error + Ki_v * speed_integral_ + Kd_v * speed_derivative;
                 cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 0.5f);
