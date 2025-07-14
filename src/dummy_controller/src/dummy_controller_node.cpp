@@ -18,15 +18,16 @@ public:
           target_pose_received_(false), target_velocity_received_(false),
           traffic_state_("GREEN"), prev_throttle_(0.0), prev_steering_(0.0), alpha_filter_(0.2)
     {
-        ros::NodeHandle nh; ros::NodeHandle pnh("~");
+        ros::NodeHandle nh; 
+        ros::NodeHandle pnh("~");
         // 参数: 滤波系数
         pnh.param("alpha_filter", alpha_filter_, alpha_filter_);
 
         // === 订阅器 ===
-        pose_sub_     = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10, &DummyPIDController::poseCallback, this);
-        twist_sub_    = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/twist", 10, &DummyPIDController::twistCallback, this);
-        target_sub_   = nh.subscribe("/target_pose", 10, &DummyPIDController::targetCallback, this);
-        velocity_sub_ = nh.subscribe("/velocity", 10, &DummyPIDController::velocityCallback, this);
+        pose_sub_     = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &DummyPIDController::poseCallback, this);
+        twist_sub_    = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/twist", 1, &DummyPIDController::twistCallback, this);
+        target_sub_   = nh.subscribe("/target_pose", 1, &DummyPIDController::targetCallback, this);
+        velocity_sub_ = nh.subscribe("/velocity", 1, &DummyPIDController::velocityCallback, this);
         traffic_sub_  = nh.subscribe("/traffic_state", 1, &DummyPIDController::trafficCallback, this);
 
         cmd_pub_      = nh.advertise<simulation::VehicleControl>("car_command", 1);
@@ -56,7 +57,7 @@ public:
             speed_integral_ += speed_error * dt;
             double speed_derivative = (speed_error - prev_speed_error_) / dt;
             prev_speed_error_ = speed_error;
-            double Kp_v = 40, Ki_v = 0.0, Kd_v = 0.0;
+            double Kp_v = 50, Ki_v = 0.0, Kd_v = 0.05;
             if (speed_error >= 0) {
                 cmd.Throttle = Kp_v * speed_error + Ki_v * speed_integral_ + Kd_v * speed_derivative;
                 cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 0.5f);
@@ -82,10 +83,12 @@ public:
             cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
 
             // === 一阶滤波平滑突变 ===
+            
             cmd.Throttle  = alpha_filter_ * cmd.Throttle  + (1.0 - alpha_filter_) * prev_throttle_;
             cmd.Steering  = alpha_filter_ * cmd.Steering  + (1.0 - alpha_filter_) * prev_steering_;
             prev_throttle_ = cmd.Throttle;
             prev_steering_ = cmd.Steering;
+            
 
             // 插入调试输出
             ROS_INFO_STREAM("Publishing cmd => Throttle: " << cmd.Throttle
