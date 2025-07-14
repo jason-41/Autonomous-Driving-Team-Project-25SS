@@ -108,7 +108,7 @@ private:
             goal_sent_ = false;
             sendNextGoal();
         }
-        else if (dist < 8) {
+        else if (dist < 6) {
             ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
             current_target_index_++;
             goal_sent_ = false;
