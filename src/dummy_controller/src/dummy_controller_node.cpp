@@ -77,7 +77,7 @@ public:
             steer_integral_ += steer_error * dt;
             double steer_derivative = (steer_error - prev_steer_error_) / dt;
             prev_steer_error_ = steer_error;
-            double Kp_s = 1, Ki_s = 0.1, Kd_s = 0.05;
+            double Kp_s = 20, Ki_s = 0.1, Kd_s = 0.05;
             cmd.Steering = Kp_s * steer_error + Ki_s * steer_integral_ + Kd_s * steer_derivative;
             cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
 
