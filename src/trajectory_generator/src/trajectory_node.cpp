@@ -19,10 +19,10 @@ public:
     pnh.param("a_max",          a_max_,         1.0);
     pnh.param("a_lat_max",      a_lat_max_,     1.0);
     pnh.param("time_interval",  time_interval_, 0.04);
-    pnh.param("lookahead_dist", lookahead_dist_, 3.0);
+    pnh.param("lookahead_dist", lookahead_dist_, 2.5);
     // 保持速度和停止参数
-    pnh.param("hold_dist",      hold_dist_,      2.0);
-    pnh.param("stop_after_dist", stop_after_dist_, 5.0);
+    pnh.param("hold_dist",      hold_dist_,      2.5);
+    pnh.param("stop_after_dist", stop_after_dist_, 3.0);
 
     path_sub_         = nh.subscribe("planned_path", 1, &TrajectoryPlanner::pathCallback, this);
     current_pose_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10,
