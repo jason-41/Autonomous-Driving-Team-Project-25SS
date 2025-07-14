@@ -19,9 +19,9 @@ public:
     pnh.param("a_max",          a_max_,         5.0);
     pnh.param("a_lat_max",      a_lat_max_,     5.0);
     pnh.param("time_interval",  time_interval_, 0.04);
-    pnh.param("lookahead_dist", lookahead_dist_, 2.5);
+    pnh.param("lookahead_dist", lookahead_dist_, 1.0);
     // 保持速度和停止参数
-    pnh.param("hold_dist",      hold_dist_,      2.5);
+    pnh.param("hold_dist",      hold_dist_,      1.0);
     pnh.param("stop_after_dist", stop_after_dist_, 3.0);
 
     path_sub_         = nh.subscribe("planned_path", 1, &TrajectoryPlanner::pathCallback, this);
@@ -122,13 +122,26 @@ private:
     double cy = current_pose_.pose.position.y;
     double min_d2 = std::numeric_limits<double>::infinity();
     size_t best_i = cur_idx_;
-    for (size_t j = cur_idx_; j < N_; ++j) {
-      double dx = xs_[j] - cx, dy = ys_[j] - cy;
-      double d2 = dx*dx + dy*dy;
-      if (d2 < min_d2) { min_d2 = d2; best_i = j; } else break;
+    
+    // 限定搜索窗口，防止回跳过多
+    size_t search_start = (cur_idx_ > 5) ? cur_idx_ - 5 : 0;
+    size_t search_end = std::min(N_, cur_idx_ + 20);
+
+    for (size_t j = search_start; j < search_end; ++j) {
+      double dx = xs_[j] - cx;
+      double dy = ys_[j] - cy;
+      double d2 = dx * dx + dy * dy;
+    
+      // 可加入朝向判断：当前朝向与路径切线夹角过大不接受
+      if (d2 < min_d2) {
+        min_d2 = d2;
+        best_i = j;
+      }
     }
-    cur_idx_ = best_i;
-    while (cur_idx_+1 < N_ && elapsed > t_[cur_idx_+1]) ++cur_idx_;
+    cur_idx_ = std::max(best_i, cur_idx_); // 只允许前进
+    
+    // 推进 index，确保时间推进或路径推进
+    while (cur_idx_ + 1 < N_ && elapsed > t_[cur_idx_ + 1]) ++cur_idx_;
 
     double vel_lin;
     if (cur_idx_+1 < N_) {

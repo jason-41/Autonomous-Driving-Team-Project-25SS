@@ -100,7 +100,15 @@ private:
         double tx = target_positions_[current_target_index_].first;
         double ty = target_positions_[current_target_index_].second;
         double dist = std::hypot(cx - tx, cy - ty);
-        if (dist < 2.5) {
+        
+        //Not useful at the moment
+        if (dist < 20 && current_target_index_ == 0) {
+            ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
+            current_target_index_++;
+            goal_sent_ = false;
+            sendNextGoal();
+        }
+        else if (dist < 8) {
             ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
             current_target_index_++;
             goal_sent_ = false;

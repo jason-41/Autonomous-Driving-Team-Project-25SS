@@ -49,7 +49,7 @@ public:
         car_pose_received_ = true;
 
         ROS_INFO("Current car grid: (%d, %d)", car_x_, car_y_);
-
+        
         if (map_received_ && car_pose_received_ && goal_received_) {
             computePath();
         }
