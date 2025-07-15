@@ -24,7 +24,7 @@ struct Node {
 
 class PathPlanner {
 public:
-    PathPlanner() : map_received_(false), car_pose_received_(false), goal_received_(false) {
+    PathPlanner() : map_received_(false), car_pose_received_(false), goal_received_(false), goal_reached_(false) {
         ros::NodeHandle nh;
         map_sub_ = nh.subscribe("/projected_map", 1, &PathPlanner::mapCallback, this);
         path_pub_ = nh.advertise<nav_msgs::Path>("planned_path", 1, true);
@@ -39,14 +39,13 @@ public:
         resolution_ = map_.info.resolution;
         origin_x_ = map_.info.origin.position.x;
         origin_y_ = map_.info.origin.position.y;
-        inflateMap(3);  // 膨胀半径为3格，按需修改
+        inflateMap(3);
         map_received_ = true;
         ROS_INFO("Map received and inflated: %d x %d", width_, height_);
     }
 
     void inflateMap(int inflation_radius) {
         std::vector<int8_t> inflated_data = map_.data;
-
         for (int y = 0; y < height_; ++y) {
             for (int x = 0; x < width_; ++x) {
                 int idx = toIndex(x, y);
@@ -58,14 +57,13 @@ public:
                             if (inBounds(nx, ny)) {
                                 int n_idx = toIndex(nx, ny);
                                 if (inflated_data[n_idx] < 80)
-                                    inflated_data[n_idx] = 79; // 设置为高代价但不是完全障碍
+                                    inflated_data[n_idx] = 79;
                             }
                         }
                     }
                 }
             }
         }
-
         map_.data = inflated_data;
     }
 
@@ -73,9 +71,23 @@ public:
         car_x_ = (msg->pose.position.x - origin_x_) / resolution_;
         car_y_ = (msg->pose.position.y - origin_y_) / resolution_;
         car_pose_received_ = true;
-        ROS_INFO("Current car grid: (%d, %d)", car_x_, car_y_);
 
-        if (map_received_ && goal_received_)
+        // 检查是否已接近目标点，如果是，则跳过路径规划
+        if (goal_received_) {
+            double dx = car_x_ - goal_x_;
+            double dy = car_y_ - goal_y_;
+            double dist = std::sqrt(dx * dx + dy * dy) * resolution_;
+            if (dist < 4.0) {
+                if (!goal_reached_) {
+                    ROS_INFO("Car is within %.2f meters of goal, skipping further path planning.", dist);
+                    goal_reached_ = true;
+                }
+                return;
+            }
+        }
+
+        // 若满足条件则执行路径规划
+        if (map_received_ && goal_received_ && !goal_reached_)
             computePath();
     }
 
@@ -83,6 +95,7 @@ public:
         goal_x_ = (msg->pose.position.x - origin_x_) / resolution_;
         goal_y_ = (msg->pose.position.y - origin_y_) / resolution_;
         goal_received_ = true;
+        goal_reached_ = false;  // 接收到新目标，重置标志
         ROS_INFO("Goal grid received: (%d, %d)", goal_x_, goal_y_);
 
         if (map_received_ && car_pose_received_)
@@ -212,6 +225,7 @@ private:
     double resolution_, origin_x_, origin_y_;
     int car_x_, car_y_, goal_x_, goal_y_;
     bool map_received_, car_pose_received_, goal_received_;
+    bool goal_reached_;  // 🆕 标志：是否已经到达目标
 
     const std::vector<std::vector<int>> directions_ = {
         {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,-1}, {1,-1}, {-1,1}
@@ -230,7 +244,7 @@ private:
         if (idx < 0 || idx >= map_.data.size())
             return true;
         int val = map_.data[idx];
-        return val >= 79;  // ≥79 表示膨胀或障碍
+        return val >= 79;
     }
 
     float heuristic(int x, int y, int gx, int gy) const {

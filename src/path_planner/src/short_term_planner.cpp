@@ -15,7 +15,7 @@ public:
         sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &ShortTermPlanner::poseCallback, this);
 
         // 使用 latched publisher，确保监听者随时都能接收到
-        pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, true);
+        pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1);
 
         std::string pkg_path = ros::package::getPath("path_planner");
         const std::string filepath = pkg_path + "/car_positions.txt";
@@ -86,6 +86,7 @@ private:
     void sendNextGoal() {
         if (current_target_index_ >= target_positions_.size()) {
             ROS_INFO_THROTTLE(5, "All targets published. Waiting...");
+            goal_sent_ = true;
             return;
         }
 

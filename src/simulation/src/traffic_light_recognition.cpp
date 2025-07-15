@@ -50,7 +50,7 @@ std::string decideTrafficLightState(const cv::Mat& roi)
     double red_ratio = cv::countNonZero(red_mask) / double(roi.total());
 
     ROS_INFO("Red ratio: %.3f", red_ratio);
-    if (red_ratio > 0.015)
+    if (red_ratio > 0.020)
         return "RED";
     else
         return "UNKNOWN";

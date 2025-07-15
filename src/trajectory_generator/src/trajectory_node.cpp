@@ -15,7 +15,7 @@ public:
     ros::NodeHandle nh, pnh("~");
     // 车辆参数
     pnh.param("wheel_base",     L_,             2.63);
-    pnh.param("v_max",          v_max_,         8.0);
+    pnh.param("v_max",          v_max_,         15.0);
     pnh.param("a_max",          a_max_,         500.0);
     pnh.param("a_lat_max",      a_lat_max_,     500.0);
     pnh.param("time_interval",  time_interval_, 0.1);

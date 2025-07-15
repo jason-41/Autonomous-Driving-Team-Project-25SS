@@ -39,7 +39,7 @@
             <remap from="cloud_in" to="/perception/pcl/points"/>
             <param name="frame_id" value="world"/>
             <param name="resolution" value="0.2"/>
-            <param name="sensor_model/max_range" value="20.0"/>
+            <param name="sensor_model/max_range" value="17.0"/>
             <param name="occupancy_max_z" value="2.0"/>
             <param name="publish_map" value="true"/>
             <param name="latch" value="true"/>
