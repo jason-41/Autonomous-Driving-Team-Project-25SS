@@ -9,13 +9,14 @@
 
 class ShortTermPlanner {
 public:
-    ShortTermPlanner() : current_target_index_(0), goal_sent_(false) {
+    ShortTermPlanner()
+        : current_target_index_(0), goal_sent_(false), pose_received_(false) {
         ros::NodeHandle nh;
-        sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10, &ShortTermPlanner::poseCallback, this);
-        pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 10);
+        sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &ShortTermPlanner::poseCallback, this);
 
-        //const std::string filepath = "/tmp/car_positions.txt";
-        // 从当前包（假设名为 short_term_planner）根目录下寻找 car_position.txt
+        // 使用 latched publisher，确保监听者随时都能接收到
+        pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, true);
+
         std::string pkg_path = ros::package::getPath("path_planner");
         const std::string filepath = pkg_path + "/car_positions.txt";
 
@@ -24,7 +25,6 @@ public:
             ros::shutdown();
         } else {
             ROS_INFO("Loaded %lu target positions.", target_positions_.size());
-            sendNextGoal();
         }
     }
 
@@ -34,6 +34,7 @@ private:
     std::vector<std::pair<double, double>> target_positions_;  
     size_t current_target_index_;
     bool goal_sent_;
+    bool pose_received_;
 
     bool loadTargetPositions(const std::string& filepath) {
         std::ifstream file(filepath);
@@ -41,19 +42,23 @@ private:
             ROS_ERROR("Could not open file: %s", filepath.c_str());
             return false;
         }
+
         std::string line;
-        // Skip header line
         if (!std::getline(file, line)) {
             ROS_ERROR("Target file %s is empty", filepath.c_str());
             file.close();
             return false;
         }
+
         while (std::getline(file, line)) {
             if (line.empty()) continue;
-            // Skip lines containing non-numeric headers
+
             bool has_alpha = false;
             for (char c : line) {
-                if (std::isalpha(c)) { has_alpha = true; break; }
+                if (std::isalpha(c)) {
+                    has_alpha = true;
+                    break;
+                }
             }
             if (has_alpha) continue;
 
@@ -63,6 +68,7 @@ private:
                 ROS_WARN("Malformed line: '%s', skipping", line.c_str());
                 continue;
             }
+
             try {
                 double x = std::stod(x_str);
                 double y = std::stod(y_str);
@@ -72,6 +78,7 @@ private:
                 continue;
             }
         }
+
         file.close();
         return !target_positions_.empty();
     }
@@ -81,34 +88,39 @@ private:
             ROS_INFO_THROTTLE(5, "All targets published. Waiting...");
             return;
         }
+
         geometry_msgs::PoseStamped goal;
-        goal.header.frame_id = "map";
+        goal.header.frame_id = "world";  // 请确保和地图 frame 一致，如 "map"
         goal.header.stamp = ros::Time::now();
         goal.pose.position.x = target_positions_[current_target_index_].first;
         goal.pose.position.y = target_positions_[current_target_index_].second;
         goal.pose.position.z = 0.0;
         goal.pose.orientation.w = 1.0;
+
         pub_goal_.publish(goal);
-        ROS_INFO("Published goal %lu: (%.2f, %.2f)", current_target_index_, goal.pose.position.x, goal.pose.position.y);
+        ROS_INFO("Published goal %lu: (%.2f, %.2f)",
+                 current_target_index_, goal.pose.position.x, goal.pose.position.y);
         goal_sent_ = true;
     }
 
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
-        if (!goal_sent_ || current_target_index_ >= target_positions_.size()) return;
         double cx = msg->pose.position.x;
         double cy = msg->pose.position.y;
+
+        if (!pose_received_) {
+            pose_received_ = true;
+            sendNextGoal();  // 初次收到位姿才发目标点
+            return;
+        }
+
+        if (!goal_sent_ || current_target_index_ >= target_positions_.size())
+            return;
+
         double tx = target_positions_[current_target_index_].first;
         double ty = target_positions_[current_target_index_].second;
         double dist = std::hypot(cx - tx, cy - ty);
-        
-        //Not useful at the moment
-        if (dist < 20 && current_target_index_ == 0) {
-            ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
-            current_target_index_++;
-            goal_sent_ = false;
-            sendNextGoal();
-        }
-        else if (dist < 8) {
+
+        if (dist < 5.0) {
             ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
             current_target_index_++;
             goal_sent_ = false;

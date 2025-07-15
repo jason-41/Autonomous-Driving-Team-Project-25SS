@@ -44,6 +44,7 @@
             <param name="publish_map" value="true"/>
             <param name="latch" value="true"/>
             <param name="use_ray_sensor" value="true"/>
+            <param name="map_publish_frequency" value="20.0"/>
       </node>
 
       <node name="traffic_light_recognition" pkg="simulation" type="traffic_light_recognition_node" output="screen" />

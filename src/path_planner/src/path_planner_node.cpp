@@ -5,6 +5,7 @@
 #include <vector>
 #include <queue>
 #include <cmath>
+#include <algorithm>
 
 struct Node {
     int x, y;
@@ -17,7 +18,7 @@ struct Node {
     float totalCost() const { return cost + heuristic; }
 
     bool operator<(const Node& other) const {
-        return totalCost() > other.totalCost();  // 小顶堆
+        return totalCost() > other.totalCost();  // min-heap
     }
 };
 
@@ -38,50 +39,112 @@ public:
         resolution_ = map_.info.resolution;
         origin_x_ = map_.info.origin.position.x;
         origin_y_ = map_.info.origin.position.y;
+        inflateMap(3);  // 膨胀半径为3格，按需修改
         map_received_ = true;
+        ROS_INFO("Map received and inflated: %d x %d", width_, height_);
+    }
 
-        ROS_INFO("Map received: %d x %d", width_, height_);
+    void inflateMap(int inflation_radius) {
+        std::vector<int8_t> inflated_data = map_.data;
+
+        for (int y = 0; y < height_; ++y) {
+            for (int x = 0; x < width_; ++x) {
+                int idx = toIndex(x, y);
+                if (map_.data[idx] >= 80) {
+                    for (int dy = -inflation_radius; dy <= inflation_radius; ++dy) {
+                        for (int dx = -inflation_radius; dx <= inflation_radius; ++dx) {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            if (inBounds(nx, ny)) {
+                                int n_idx = toIndex(nx, ny);
+                                if (inflated_data[n_idx] < 80)
+                                    inflated_data[n_idx] = 79; // 设置为高代价但不是完全障碍
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        map_.data = inflated_data;
     }
 
     void carPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
         car_x_ = (msg->pose.position.x - origin_x_) / resolution_;
         car_y_ = (msg->pose.position.y - origin_y_) / resolution_;
         car_pose_received_ = true;
-
         ROS_INFO("Current car grid: (%d, %d)", car_x_, car_y_);
-        
-        if (map_received_ && car_pose_received_ && goal_received_) {
+
+        if (map_received_ && goal_received_)
             computePath();
-        }
     }
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
         goal_x_ = (msg->pose.position.x - origin_x_) / resolution_;
         goal_y_ = (msg->pose.position.y - origin_y_) / resolution_;
         goal_received_ = true;
-
         ROS_INFO("Goal grid received: (%d, %d)", goal_x_, goal_y_);
 
-        if (map_received_ && car_pose_received_) {
+        if (map_received_ && car_pose_received_)
             computePath();
-        } else {
-            ROS_WARN("Cannot compute path yet, waiting for map and car position.");
-        }
+        else
+            ROS_WARN("Waiting for map and car pose...");
     }
 
     void computePath() {
-        if (car_x_ < 0 || car_x_ >= width_ || car_y_ < 0 || car_y_ >= height_) {
-            ROS_ERROR("Start grid out of bounds: (%d, %d)", car_x_, car_y_);
-            return;
+        if (!inBounds(car_x_, car_y_)) {
+            ROS_WARN("Start grid (%d, %d) is out of bounds. Searching for nearby valid start...", car_x_, car_y_);
+            bool found = false;
+            for (int r = 1; r <= 5 && !found; ++r) {
+                for (int dx = -r; dx <= r; ++dx) {
+                   for (int dy = -r; dy <= r; ++dy) {
+                        int nx = car_x_ + dx;
+                        int ny = car_y_ + dy;
+                        if (inBounds(nx, ny) && !isOccupied(nx, ny)) {
+                            car_x_ = nx;
+                            car_y_ = ny;
+                            found = true;
+                            ROS_INFO("Relocated out-of-bounds start to (%d, %d)", car_x_, car_y_);
+                            break;
+                        }
+                    }
+                   if (found) break;
+                }
+            }
+            if (!found) {
+                ROS_ERROR("Failed to find valid start near out-of-bounds position.");
+                return;
+            }
         }
-        if (goal_x_ < 0 || goal_x_ >= width_ || goal_y_ < 0 || goal_y_ >= height_) {
+
+        if (!inBounds(goal_x_, goal_y_)) {
             ROS_ERROR("Goal grid out of bounds: (%d, %d)", goal_x_, goal_y_);
             return;
         }
 
+        if (isOccupied(car_x_, car_y_)) {
+            ROS_WARN("Car appears in obstacle. Trying to relocate start point.");
+            bool found = false;
+            for (int dx = -1; dx <= 1 && !found; ++dx) {
+                for (int dy = -1; dy <= 1 && !found; ++dy) {
+                    int nx = car_x_ + dx;
+                    int ny = car_y_ + dy;
+                    if (inBounds(nx, ny) && !isOccupied(nx, ny)) {
+                        car_x_ = nx;
+                        car_y_ = ny;
+                        found = true;
+                        ROS_INFO("Relocated start to (%d, %d)", car_x_, car_y_);
+                    }
+                }
+            }
+            if (!found) {
+                ROS_ERROR("No valid start found near current car position.");
+                return;
+            }
+        }
+
         std::priority_queue<Node> open_list;
         std::vector<bool> closed_list(width_ * height_, false);
-
         Node* start_node = new Node(car_x_, car_y_, 0, heuristic(car_x_, car_y_, goal_x_, goal_y_));
         open_list.push(*start_node);
 
@@ -96,8 +159,8 @@ public:
             closed_list[idx] = true;
 
             if (current.x == goal_x_ && current.y == goal_y_) {
-                ROS_INFO("Goal reached!");
                 goal_node = new Node(current);
+                ROS_INFO("Goal reached!");
                 break;
             }
 
@@ -105,13 +168,7 @@ public:
                 int nx = current.x + dir[0];
                 int ny = current.y + dir[1];
 
-                if (nx < 0 || nx >= width_ || ny < 0 || ny >= height_)
-                    continue;
-
-                if (isOccupied(nx, ny))
-                    continue;
-
-                if (closed_list[toIndex(nx, ny)])
+                if (!inBounds(nx, ny) || isOccupied(nx, ny) || closed_list[toIndex(nx, ny)])
                     continue;
 
                 float new_cost = current.cost + distance(current.x, current.y, nx, ny);
@@ -127,7 +184,7 @@ public:
             path.header.stamp = ros::Time::now();
 
             Node* n = goal_node;
-            while (n != nullptr) {
+            while (n) {
                 geometry_msgs::PoseStamped pose;
                 pose.header = path.header;
                 pose.pose.position.x = origin_x_ + (n->x + 0.5) * resolution_;
@@ -141,7 +198,7 @@ public:
             path_pub_.publish(path);
             ROS_INFO("Path published with %lu points", path.poses.size());
         } else {
-            ROS_WARN("Path not found");
+            ROS_WARN("Path not found.");
         }
     }
 
@@ -152,28 +209,28 @@ private:
     ros::Subscriber goal_sub_;
     nav_msgs::OccupancyGrid map_;
     int width_, height_;
-    double resolution_;
-    double origin_x_, origin_y_;
-    int car_x_, car_y_;
-    int goal_x_, goal_y_;
-
-    bool map_received_ = false;
-    bool car_pose_received_ = false;
-    bool goal_received_ = false;
+    double resolution_, origin_x_, origin_y_;
+    int car_x_, car_y_, goal_x_, goal_y_;
+    bool map_received_, car_pose_received_, goal_received_;
 
     const std::vector<std::vector<int>> directions_ = {
-        {1,0}, {-1,0}, {0,1}, {0,-1},
-        {1,1}, {-1,-1}, {1,-1}, {-1,1}
+        {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,-1}, {1,-1}, {-1,1}
     };
 
     int toIndex(int x, int y) const {
         return y * width_ + x;
     }
 
+    bool inBounds(int x, int y) const {
+        return x >= 0 && x < width_ && y >= 0 && y < height_;
+    }
+
     bool isOccupied(int x, int y) const {
         int idx = toIndex(x, y);
+        if (idx < 0 || idx >= map_.data.size())
+            return true;
         int val = map_.data[idx];
-        return (val > 50 || val < 0);
+        return val >= 79;  // ≥79 表示膨胀或障碍
     }
 
     float heuristic(int x, int y, int gx, int gy) const {

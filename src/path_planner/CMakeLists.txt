@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   roslib
+  tf
 )
 
 ## System dependencies are found with CMake's conventions
@@ -108,7 +109,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES path_planner
 #  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp std_msgs
-CATKIN_DEPENDS roscpp geometry_msgs nav_msgs roslib
+CATKIN_DEPENDS roscpp geometry_msgs nav_msgs  tf roslib
 #  DEPENDS system_lib
 )
 
