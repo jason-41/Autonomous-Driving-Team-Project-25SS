@@ -120,7 +120,7 @@ private:
         double ty = target_positions_[current_target_index_].second;
         double dist = std::hypot(cx - tx, cy - ty);
 
-        if (dist < 5.0) {
+        if (dist < 4.0) {
             ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
             current_target_index_++;
             goal_sent_ = false;

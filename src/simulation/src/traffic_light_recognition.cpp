@@ -62,15 +62,15 @@ public:
     TrafficLightRecognizer(ros::NodeHandle& nh) : it_(nh), tf_listener_(tf_buffer_)
     {
         image_transport::TransportHints hints("raw", ros::TransportHints(), ros::NodeHandle("~"));
-        semantic_img_sub_ = it_.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/SemanticCamera/image_raw", 10, &TrafficLightRecognizer::semanticImgCb, this, hints);
-        semantic_info_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/SemanticCamera/camera_info", 10, &TrafficLightRecognizer::semanticInfoCb, this);
-        depth_img_sub_ = it_.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/DepthCamera/image_raw", 10, &TrafficLightRecognizer::depthImgCb, this, hints);
-        depth_info_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/DepthCamera/camera_info", 10, &TrafficLightRecognizer::depthInfoCb, this);
-        rgb_img_sub_ = it_.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/RGBCameraLeft/image_raw", 10, &TrafficLightRecognizer::rgbImgCb, this, hints);
-        rgb_info_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/RGBCameraLeft/camera_info", 10, &TrafficLightRecognizer::rgbInfoCb, this);
+        semantic_img_sub_ = it_.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/SemanticCamera/image_raw", 1, &TrafficLightRecognizer::semanticImgCb, this, hints);
+        semantic_info_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/SemanticCamera/camera_info", 1, &TrafficLightRecognizer::semanticInfoCb, this);
+        depth_img_sub_ = it_.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/DepthCamera/image_raw", 1, &TrafficLightRecognizer::depthImgCb, this, hints);
+        depth_info_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/DepthCamera/camera_info", 1, &TrafficLightRecognizer::depthInfoCb, this);
+        rgb_img_sub_ = it_.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/RGBCameraLeft/image_raw", 1, &TrafficLightRecognizer::rgbImgCb, this, hints);
+        rgb_info_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/Sensors/RGBCameraLeft/camera_info", 1, &TrafficLightRecognizer::rgbInfoCb, this);
 
-        traffic_light_img_pub_ = it_.advertise("/traffic_light/image", 10);
-        traffic_light_state_pub_ = nh.advertise<std_msgs::String>("/traffic_state", 10);
+        traffic_light_img_pub_ = it_.advertise("/traffic_light/image", 1);
+        traffic_light_state_pub_ = nh.advertise<std_msgs::String>("/traffic_state", 1);
     }
 
     void semanticInfoCb(const sensor_msgs::CameraInfoConstPtr& msg) { semantic_cam_info_ = *msg; }
@@ -148,6 +148,15 @@ public:
         if (!findCenterClosestTrafficLight(semantic_img_, tl_center))
         {
             ROS_INFO("No traffic light found");
+            // 发布一张全黑图像代替红绿灯图像，清除上一次的图像
+            cv::Mat black_image = cv::Mat::zeros(20, 20, CV_8UC3);  // 可以设成合适大小
+            sensor_msgs::ImagePtr empty_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", black_image).toImageMsg();
+            traffic_light_img_pub_.publish(empty_msg);
+
+            // 发布 UNKNOWN 状态
+            std_msgs::String state_msg;
+            state_msg.data = "UNKNOWN";
+            traffic_light_state_pub_.publish(state_msg);
             return;
         }
 
