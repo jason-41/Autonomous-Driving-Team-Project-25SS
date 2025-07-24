@@ -38,4 +38,4 @@ __pycache__/
 # *.srv
 .catkin_workspace
 .catkin_tools/
-CATKIN_IGNORE
+CATKIN_IGNOREros_comm/

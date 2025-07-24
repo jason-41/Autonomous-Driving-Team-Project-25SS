@@ -6,6 +6,8 @@
 #include <queue>
 #include <cmath>
 #include <algorithm>
+#include <std_msgs/Bool.h>
+#include <tf/tf.h>  
 
 struct Node {
     int x, y;
@@ -24,12 +26,14 @@ struct Node {
 
 class PathPlanner {
 public:
-    PathPlanner() : map_received_(false), car_pose_received_(false), goal_received_(false), goal_reached_(false) {
+    PathPlanner() : map_received_(false), car_pose_received_(false), goal_received_(false),
+                    goal_reached_(false), ready_published_(false) {
         ros::NodeHandle nh;
         map_sub_ = nh.subscribe("/projected_map", 1, &PathPlanner::mapCallback, this);
         path_pub_ = nh.advertise<nav_msgs::Path>("planned_path", 1, true);
         car_pose_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &PathPlanner::carPoseCallback, this);
         goal_sub_ = nh.subscribe("/move_base_simple/goal", 1, &PathPlanner::goalCallback, this);
+        ready_pub_ = nh.advertise<std_msgs::Bool>("/path_planner_ready", 1, true);
     }
 
     void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
@@ -42,6 +46,14 @@ public:
         inflateMap(3);
         map_received_ = true;
         ROS_INFO("Map received and inflated: %d x %d", width_, height_);
+
+        if (!ready_published_) {
+            std_msgs::Bool ready_msg;
+            ready_msg.data = true;
+            ready_pub_.publish(ready_msg);
+            ready_published_ = true;
+            ROS_INFO("Published /path_planner_ready signal.");
+        }
     }
 
     void inflateMap(int inflation_radius) {
@@ -57,7 +69,7 @@ public:
                             if (inBounds(nx, ny)) {
                                 int n_idx = toIndex(nx, ny);
                                 if (inflated_data[n_idx] < 80)
-                                    inflated_data[n_idx] = 79;
+                                    inflated_data[n_idx] = 5;
                             }
                         }
                     }
@@ -68,8 +80,9 @@ public:
     }
 
     void carPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
-        car_x_ = (msg->pose.position.x - origin_x_) / resolution_;
-        car_y_ = (msg->pose.position.y - origin_y_) / resolution_;
+        car_pose_ = *msg;  // 保存完整pose
+        car_x_ = (car_pose_.pose.position.x - origin_x_) / resolution_;
+        car_y_ = (car_pose_.pose.position.y - origin_y_) / resolution_;
         car_pose_received_ = true;
 
         // 检查是否已接近目标点，如果是，则跳过路径规划
@@ -109,11 +122,11 @@ public:
             ROS_WARN("Start grid (%d, %d) is out of bounds. Searching for nearby valid start...", car_x_, car_y_);
             bool found = false;
             for (int r = 1; r <= 5 && !found; ++r) {
-                for (int dx = -r; dx <= r; ++dx) {
-                   for (int dy = -r; dy <= r; ++dy) {
+                for (int dx = -r; dx <= r && !found; ++dx) {
+                    for (int dy = -r; dy <= r && !found; ++dy) {
                         int nx = car_x_ + dx;
                         int ny = car_y_ + dy;
-                        if (inBounds(nx, ny) && !isOccupied(nx, ny)) {
+                        if (inBounds(nx, ny)) {
                             car_x_ = nx;
                             car_y_ = ny;
                             found = true;
@@ -121,7 +134,6 @@ public:
                             break;
                         }
                     }
-                   if (found) break;
                 }
             }
             if (!found) {
@@ -136,24 +148,11 @@ public:
         }
 
         if (isOccupied(car_x_, car_y_)) {
-            ROS_WARN("Car appears in obstacle. Trying to relocate start point.");
-            bool found = false;
-            for (int dx = -1; dx <= 1 && !found; ++dx) {
-                for (int dy = -1; dy <= 1 && !found; ++dy) {
-                    int nx = car_x_ + dx;
-                    int ny = car_y_ + dy;
-                    if (inBounds(nx, ny) && !isOccupied(nx, ny)) {
-                        car_x_ = nx;
-                        car_y_ = ny;
-                        found = true;
-                        ROS_INFO("Relocated start to (%d, %d)", car_x_, car_y_);
-                    }
-                }
-            }
-            if (!found) {
-                ROS_ERROR("No valid start found near current car position.");
-                return;
-            }
+            ROS_WARN("Car start position is in obstacle (shadow). Ignoring occupancy check.");
+        }
+
+        if (isOccupied(goal_x_, goal_y_)) {
+            ROS_WARN("Goal position is in obstacle (shadow). Planning path anyway.");
         }
 
         std::priority_queue<Node> open_list;
@@ -181,8 +180,15 @@ public:
                 int nx = current.x + dir[0];
                 int ny = current.y + dir[1];
 
-                if (!inBounds(nx, ny) || isOccupied(nx, ny) || closed_list[toIndex(nx, ny)])
-                    continue;
+                if (!inBounds(nx, ny)) continue;
+
+                if ((nx == car_x_ && ny == car_y_) || (nx == goal_x_ && ny == goal_y_)) {
+                    // 起点和终点，允许占据，跳过障碍检查
+                } else {
+                    if (isOccupied(nx, ny)) continue;
+                }
+
+                if (closed_list[toIndex(nx, ny)]) continue;
 
                 float new_cost = current.cost + distance(current.x, current.y, nx, ny);
                 float h = heuristic(nx, ny, goal_x_, goal_y_);
@@ -225,7 +231,11 @@ private:
     double resolution_, origin_x_, origin_y_;
     int car_x_, car_y_, goal_x_, goal_y_;
     bool map_received_, car_pose_received_, goal_received_;
-    bool goal_reached_;  // 🆕 标志：是否已经到达目标
+    bool goal_reached_;  
+    ros::Publisher ready_pub_;
+    bool ready_published_;
+
+    geometry_msgs::PoseStamped car_pose_;  // 保存车辆完整位姿
 
     const std::vector<std::vector<int>> directions_ = {
         {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,-1}, {1,-1}, {-1,1}
@@ -239,10 +249,53 @@ private:
         return x >= 0 && x < width_ && y >= 0 && y < height_;
     }
 
+    // 新增：计算车辆航向角yaw
+    double getCarYaw() const {
+        tf::Quaternion q(
+            car_pose_.pose.orientation.x,
+            car_pose_.pose.orientation.y,
+            car_pose_.pose.orientation.z,
+            car_pose_.pose.orientation.w);
+        tf::Matrix3x3 m(q);
+        double roll, pitch, yaw;
+        m.getRPY(roll, pitch, yaw);
+        return yaw;
+    }
+
+    // 新增：判断点是否在车头忽略区域内（0.5米宽，1米深）
+    bool isInFrontIgnoreZone(int x, int y) const {
+        double yaw = getCarYaw();
+        int cx = car_x_;
+        int cy = car_y_;
+
+        double dx = cos(yaw);
+        double dy = sin(yaw);
+
+        int rel_x = x - cx;
+        int rel_y = y - cy;
+
+        // 车头方向轴上的投影距离
+        double forward_dist = rel_x * dx + rel_y * dy;
+        // 横向距离，绝对值
+        double lateral_dist = std::abs(-rel_x * dy + rel_y * dx);
+
+        double width_thresh = (1.5 / 2.0) / resolution_;  // 半宽0.25米换算成格子数
+        double forward_thresh = 10.0 / resolution_;       // 1米深度换算成格子数
+
+        return forward_dist > 0 && forward_dist < forward_thresh && lateral_dist < width_thresh;
+    }
+
+    // 修改isOccupied，忽略车头前方小区域障碍
     bool isOccupied(int x, int y) const {
         int idx = toIndex(x, y);
-        if (idx < 0 || idx >= map_.data.size())
+        if (idx < 0 || idx >= (int)map_.data.size())
             return true;
+
+        // 忽略车头前方0.5米宽1米深障碍
+        if (isInFrontIgnoreZone(x, y)) {
+            return false;
+        }
+
         int val = map_.data[idx];
         return val >= 79;
     }

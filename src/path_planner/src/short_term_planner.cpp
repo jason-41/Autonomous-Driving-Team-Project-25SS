@@ -1,21 +1,31 @@
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <std_msgs/Bool.h>
 #include <fstream>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <ros/package.h>
 #include <cmath>
+#include <std_msgs/Int32.h>
 
 class ShortTermPlanner {
 public:
     ShortTermPlanner()
         : current_target_index_(0), goal_sent_(false), pose_received_(false) {
         ros::NodeHandle nh;
-        sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &ShortTermPlanner::poseCallback, this);
+        
+        ROS_INFO("Waiting for /path_planner_ready...");
+        auto ready_msg = ros::topic::waitForMessage<std_msgs::Bool>("/path_planner_ready", nh);
+        if (ready_msg && ready_msg->data) {
+            ROS_INFO("/path_planner_ready received, starting short term planner.");
+        } else {
+            ROS_WARN("Did not receive /path_planner_ready, continuing anyway.");
+        }
 
-        // 使用 latched publisher，确保监听者随时都能接收到
+        sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &ShortTermPlanner::poseCallback, this);
         pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1);
+        pub_index_ = nh.advertise<std_msgs::Int32>("/current_target_index", 1);
 
         std::string pkg_path = ros::package::getPath("path_planner");
         const std::string filepath = pkg_path + "/car_positions.txt";
@@ -31,6 +41,7 @@ public:
 private:
     ros::Subscriber sub_pose_;
     ros::Publisher pub_goal_;
+    ros::Publisher pub_index_;
     std::vector<std::pair<double, double>> target_positions_;  
     size_t current_target_index_;
     bool goal_sent_;
@@ -102,6 +113,10 @@ private:
         ROS_INFO("Published goal %lu: (%.2f, %.2f)",
                  current_target_index_, goal.pose.position.x, goal.pose.position.y);
         goal_sent_ = true;
+
+        std_msgs::Int32 index_msg;
+        index_msg.data = static_cast<int>(current_target_index_);
+        pub_index_.publish(index_msg);
     }
 
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
@@ -121,7 +136,7 @@ private:
         double ty = target_positions_[current_target_index_].second;
         double dist = std::hypot(cx - tx, cy - ty);
 
-        if (dist < 4.0) {
+        if (dist < 4.5) {
             ROS_INFO("Reached target %lu: (%.2f, %.2f)", current_target_index_, tx, ty);
             current_target_index_++;
             goal_sent_ = false;

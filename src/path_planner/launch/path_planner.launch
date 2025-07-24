@@ -1,0 +1,4 @@
+<launch>
+    <node name="path_planner" pkg="path_planner" type="path_planner_node" output="screen"/>
+    <node name="short_terms" pkg="path_planner" type="short_term_planner_node" output="screen"/>
+</launch>

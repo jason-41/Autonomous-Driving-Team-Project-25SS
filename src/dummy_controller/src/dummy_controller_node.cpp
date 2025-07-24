@@ -48,9 +48,15 @@ public:
             }
 
             if (traffic_state_ == "RED") {
+                speed_integral_ = 0.0;
+                prev_speed_error_ = 0.0;
+                steer_integral_ = 0.0;
+                prev_steer_error_ = 0.0;
+
                 cmd.Throttle = 0.0;
-                cmd.Brake = 1.0;
+                cmd.Brake = 1.0;  // 最大刹车
                 cmd.Steering = 0.0;
+                prev_speed_error_ = -500.0;
             } else {
               // === 判断目标是否在车后方 ===
                 double dx = target_pose_.pose.position.x - current_pose_.pose.position.x;
@@ -79,7 +85,7 @@ public:
                 double speed_derivative = (speed_error - prev_speed_error_) / dt;
                 prev_speed_error_ = speed_error;
 
-                double Kp_v = 40.0, Ki_v = 0.1, Kd_v = 0.01;
+                double Kp_v = 38.0, Ki_v = 0.0, Kd_v = 0.2;
 
                if (speed_error >= 0) {
                   // 当前车速低于目标速度：给油门
