@@ -39,3 +39,4 @@ __pycache__/
 .catkin_workspace
 .catkin_tools/
 CATKIN_IGNOREros_comm/
+ros_comm/
