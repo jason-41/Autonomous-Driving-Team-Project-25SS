@@ -13,14 +13,14 @@ class TrajectoryPlanner {
 public:
   TrajectoryPlanner() {
     ros::NodeHandle nh, pnh("~");
-    // 车辆参数
+    // 车辆参数 vehicle parameters
     pnh.param("wheel_base",     L_,             2.63);
     pnh.param("v_max",          v_max_,         20.0);
     pnh.param("a_max",          a_max_,         400.0);
     pnh.param("a_lat_max",      a_lat_max_,     400.0);
     pnh.param("time_interval",  time_interval_, 0.1);
     pnh.param("lookahead_dist", lookahead_dist_, 1.0);
-    // 保持速度和停止参数
+    // 保持速度和停止参数 speed hold and stop parameters
     pnh.param("hold_dist",      hold_dist_,      1.0);
     pnh.param("stop_after_dist", stop_after_dist_, 3.0);
 
@@ -41,7 +41,7 @@ private:
     const auto& poses = path_msg->poses;
     N_ = poses.size();
     if (N_ < 3) {
-      ROS_WARN("需要至少3个路径点来计算曲率，当前：%zu", N_);
+      ROS_WARN("需要至少3个路径点来计算曲率，当前：%zu", N_); //"Need at least 3 points to compute curvature, current: %zu", N_);
       active_ = false;
       return;
     }
@@ -62,7 +62,7 @@ private:
     }
     yaws_[N_-1] = yaws_[N_-2];
 
-    // 曲率与速度限幅
+    // 曲率与速度限幅 speed limit based on curvature
     k_.assign(N_, 0.0);
     std::vector<double> v_limit(N_, v_max_);
     for (size_t i = 1; i < N_-1; ++i) {
@@ -73,7 +73,7 @@ private:
     }
     v_limit[0] = v_limit[N_-1] = 0.0;
 
-    // 加速度限幅速度
+    // 加速度限幅速度 acceleration limit velocity
     v_.assign(N_, 0.0);
     for (size_t i = 1; i < N_; ++i) {
       v_[i] = std::min(v_limit[i],
@@ -84,7 +84,7 @@ private:
         std::sqrt(v_[i+1]*v_[i+1] + 2 * a_max_ * ds[i]));
     }
 
-    // 时间戳
+    // 时间戳 与推进时间计算 time stamps and propagation
     t_.assign(N_, 0.0);
     for (size_t i = 1; i < N_; ++i) {
       double dt = (v_[i] > 1e-3) ? ds[i-1]/v_[i] : time_interval_;
@@ -96,7 +96,7 @@ private:
     start_    = ros::Time::now();
     active_   = true;
 
-    // 终点与保持逻辑
+    // 终点与保持逻辑 end point and hold logic
     end_x_ = xs_.back(); end_y_ = ys_.back();
     hold_flag_ = false; hold_vel_ = 0.0;
     reached_flag_ = false;
@@ -117,35 +117,33 @@ private:
     ros::Time now = ros::Time::now();
     double elapsed = (now - start_).toSec();
 
-    // 最近点匹配与推进索引
+    // 最近点匹配与推进索引   Nearest point matching and index advancement
     double cx = current_pose_.pose.position.x;
     double cy = current_pose_.pose.position.y;
     double min_d2 = std::numeric_limits<double>::infinity();
     size_t best_i = cur_idx_;
-    
-    // 限定搜索窗口，防止回跳过多
+    // 限定搜索窗口，防止回跳过多  Limit search window to prevent excessive backtracking
     size_t search_start = (cur_idx_ > 5) ? cur_idx_ - 5 : 0;
     size_t search_end = std::min(N_, cur_idx_ + 20);
-
     for (size_t j = search_start; j < search_end; ++j) {
       double dx = xs_[j] - cx;
       double dy = ys_[j] - cy;
       double d2 = dx * dx + dy * dy;
-    
-      // 可加入朝向判断：当前朝向与路径切线夹角过大不接受
+      // 可加入朝向判断：当前朝向与路径切线夹角过大不接受 orientation check: if the angle between current orientation and path tangent is too large, do not accept
+      // this is to make sure the vehicle is not trying to go backward
       if (d2 < min_d2) {
         min_d2 = d2;
         best_i = j;
       }
     }
-    cur_idx_ = std::max(best_i, cur_idx_); // 只允许前进
+    cur_idx_ = std::max(best_i, cur_idx_); // 只允许前进 only allow forward movement
     
-    // 推进 index，确保时间推进或路径推进
+    // 推进 index，确保时间推进或路径推进 forward index, ensure time or path advancement
     while (cur_idx_ + 1 < N_ && elapsed > t_[cur_idx_ + 1]) ++cur_idx_;
 
     double vel_lin;
     if (cur_idx_+1 < N_) {
-      // 插值计算
+      // 插值计算 线速度 interpolate linear velocity
       double dt_seg = t_[cur_idx_+1] - t_[cur_idx_];
       double alpha = (dt_seg>1e-6) ? (elapsed - t_[cur_idx_]) / dt_seg : 0.0;
       vel_lin = v_[cur_idx_] + alpha * (v_[cur_idx_+1] - v_[cur_idx_]);
@@ -158,8 +156,8 @@ private:
       else {
         hold_flag_ = false;
       }
-    } else {
-      // 到达终点
+    } else { // 最后一个点，保持速度 last point, hold speed
+      // 到达终点 reached end point
       if (!reached_flag_) {
         reached_flag_ = true;
         reach_x_ = cx; reach_y_ = cy;
@@ -171,7 +169,7 @@ private:
       vel_lin = hold_vel_;
     }
 
-    // 发布 target_pose
+    // 发布目标位姿 publish target pose
     size_t look_i = cur_idx_;
     for (size_t i = cur_idx_; i < N_; ++i) {
       double dx = xs_[i] - cx, dy = ys_[i] - cy;
@@ -184,7 +182,7 @@ private:
     ps.pose.orientation = tf::createQuaternionMsgFromYaw(yaws_[look_i]);
     pose_pub_.publish(ps);
 
-    // 发布速度
+    // 发布速度 publish velocity
     geometry_msgs::TwistStamped cmd;
     cmd.header.stamp = now; cmd.header.frame_id = frame_id_;
     cmd.twist.linear.x = vel_lin;
