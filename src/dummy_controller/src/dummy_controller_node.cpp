@@ -19,7 +19,7 @@ public:
     {
         ros::NodeHandle nh;
 
-        // === 订阅器 ===
+        // === subscriber ===
         pose_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &DummyPIDController::poseCallback, this);
         twist_sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/twist", 1, &DummyPIDController::twistCallback, this);
         target_sub_ = nh.subscribe("/target_pose", 1, &DummyPIDController::targetCallback, this);
@@ -54,11 +54,11 @@ public:
                 prev_steer_error_ = 0.0;
 
                 cmd.Throttle = 0.0;
-                cmd.Brake = 1.0;  // 最大刹车
+                cmd.Brake = 1.0;  // maximum brake
                 cmd.Steering = 0.0;
                 prev_speed_error_ = -500.0;
             } else {
-              // === 判断目标是否在车后方 ===
+              // === judge whether the target is behind the car ===
                 double dx = target_pose_.pose.position.x - current_pose_.pose.position.x;
                 double dy = target_pose_.pose.position.y - current_pose_.pose.position.y;
                 double current_yaw = tf::getYaw(current_pose_.pose.orientation);
@@ -76,7 +76,7 @@ public:
                     loop_rate.sleep();
                     continue;
                 }
-                // === PID 控制速度 ===
+                // === PID for speed control ===
                 double target_speed = target_velocity_.twist.linear.x;
                 double current_speed = current_twist_.twist.linear.x;
                 double speed_error = target_speed - current_speed;
@@ -88,25 +88,25 @@ public:
                 double Kp_v = 38.0, Ki_v = 0.0, Kd_v = 0.2;
 
                if (speed_error >= 0) {
-                  // 当前车速低于目标速度：给油门
+                  // when car speed slower than target speed : throttle
                   cmd.Throttle = Kp_v * speed_error + Ki_v * speed_integral_ + Kd_v * speed_derivative;
                   cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 0.6f);
                   cmd.Brake = 0.0;
                 } else {
-                  // 当前车速高于目标速度：刹车
+                  // when car speed faster than target speed : brake
                   cmd.Throttle = 0.0;
                   cmd.Brake = 0.0;
 
                 }
 
 
-                // === PID 控制方向 ===
+                // === PID for steering control ===
                 double desired_yaw = std::atan2(dy, dx);
                 double steer_error = current_yaw - desired_yaw;//negative number turns left, positive number turns right
 
                 while (steer_error > M_PI) steer_error -= 2 * M_PI;
                 while (steer_error < -M_PI) steer_error += 2 * M_PI;
-                // 插入调试输出
+                // insert test output
                 ROS_INFO_STREAM("current_yaw: " << current_yaw 
                              << ", desired_yaw: " << desired_yaw 
                              << ", steer_error: " << steer_error);
@@ -117,14 +117,14 @@ public:
                 double Kp_s = 1.0, Ki_s = 0.1, Kd_s = 0.05;
                 cmd.Steering = Kp_s * steer_error + Ki_s * steer_integral_ + Kd_s * steer_derivative;
                 cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
-                 // 插入调试输出
+
                  ROS_INFO_STREAM("Steer error: " << steer_error 
                             << ", P: " << Kp_s * steer_error 
                             << ", D: " << Kd_s * steer_derivative 
                             << ", Steering(before clamp): " 
                             << (Kp_s * steer_error + Kd_s * steer_derivative));
             }
-            // 插入调试输出
+
             ROS_INFO_STREAM("Publishing cmd => Throttle: " << cmd.Throttle
                         << ", Brake: " << cmd.Brake
                         << ", Steering: " << cmd.Steering);
