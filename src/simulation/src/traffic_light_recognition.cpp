@@ -9,13 +9,12 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <image_transport/image_transport.h>
 
-// 找到语义图中黄色像素，返回最靠近图像中心的点
+// Find the yellow pixel in the semantic image closest to the image center
 bool findCenterClosestTrafficLight(const cv::Mat& semantic_img, cv::Point& center, int current_index)
 {
     cv::Mat mask;
     cv::inRange(semantic_img, cv::Scalar(0, 200, 200), cv::Scalar(50, 255, 255), mask);
 
-    // ✅ 只在 current_index 不在 [10, 35] 时才检查轮廓数
     if (current_index < 10 || current_index > 42) {
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(mask.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -26,7 +25,6 @@ bool findCenterClosestTrafficLight(const cv::Mat& semantic_img, cv::Point& cente
         }
     }
 
-    // ✅ 找到距离图像中心最近的黄色像素
     double min_dist = std::numeric_limits<double>::max();
     bool found = false;
     cv::Point img_center(semantic_img.cols / 2, semantic_img.rows / 2);
@@ -56,7 +54,7 @@ bool findCenterClosestTrafficLight(const cv::Mat& semantic_img, cv::Point& cente
     return found;
 }
 
-
+// Decide traffic light state from the ROI image by detecting red color ratio
 std::string decideTrafficLightState(const cv::Mat &roi)
 {
     cv::Mat hsv;
@@ -69,7 +67,7 @@ std::string decideTrafficLightState(const cv::Mat &roi)
     double red_ratio = cv::countNonZero(red_mask) / double(roi.total());
 
     ROS_INFO("Red ratio: %.3f", red_ratio);
-    if (red_ratio > 0.015)
+    if (red_ratio > 0.020)
         return "RED";
     else
         return "UNKNOWN";
@@ -128,6 +126,7 @@ public:
         }
     }
     
+    // Check if there is a red block in front ROI of semantic image
     bool isRedBlockInFront()
     {
         if (semantic_img_.empty()) return false;
@@ -145,9 +144,10 @@ public:
         cv::bitwise_or(mask1, mask2, red_mask);
         double red_ratio = (double)cv::countNonZero(red_mask) / (region.rows * region.cols);
         ROS_INFO("Red block ratio in front: %.2f", red_ratio);
-        return red_ratio > 0.13;
+        return red_ratio > 0.15;
     }
 
+    // Get vehicle yaw from tf transform
     double getVehicleYaw()
     {
         try {
@@ -166,6 +166,7 @@ public:
         }
     }
 
+    // Estimate approximate depth by yellow area size in semantic image
     float estimateFakeDepthByArea()
     {
         if (semantic_img_.empty())
@@ -187,6 +188,7 @@ public:
         return estimated_distance;
     }
 
+    // Main processing function called periodically
     void process()
     {
         frame_count_++;
@@ -310,6 +312,7 @@ private:
 
     double t_x_ = 1.0, t_y_ = 0.0, t_z_ = 0.0;
 
+    // Convert pixel coordinate and depth to 3D point in camera frame
     cv::Point3d pixelTo3D(int u, int v, float depth, const sensor_msgs::CameraInfo &cam_info)
     {
         double fx = cam_info.K[0], fy = cam_info.K[4], cx = cam_info.K[2], cy = cam_info.K[5];
@@ -318,6 +321,7 @@ private:
         return cv::Point3d(x, y, depth);
     }
 
+    // Project 3D point to pixel coordinates of given camera info
     cv::Point2d project3DToPixel(const geometry_msgs::PointStamped &pt, const sensor_msgs::CameraInfo &cam_info)
     {
         double fx = cam_info.K[0], fy = cam_info.K[4], cx = cam_info.K[2], cy = cam_info.K[5];
@@ -326,6 +330,7 @@ private:
         return cv::Point2d(u, v);
     }
 
+    // Extract ROI around projected pixel in RGB image, publish it, and publish the traffic light state
     void extractAndPublishROI(cv::Point2d uv_rgb, int current_index)
     {   if (current_index >= 10 && current_index <=40 ){
           uv_rgb.x += 8;

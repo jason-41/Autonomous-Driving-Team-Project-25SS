@@ -46,7 +46,17 @@ private:
     size_t current_target_index_;
     bool goal_sent_;
     bool pose_received_;
+    
 
+    /**
+     * @brief Loads target positions from a CSV file.
+     * 
+     * Each line is expected to contain two comma-separated numbers (x, y).
+     * Lines with alphabetic characters or malformed data will be skipped.
+     * 
+     * @param filepath Path to the target positions file
+     * @return true if at least one valid target is loaded, false otherwise
+     */
     bool loadTargetPositions(const std::string& filepath) {
         std::ifstream file(filepath);
         if (!file.is_open()) {
@@ -93,7 +103,13 @@ private:
         file.close();
         return !target_positions_.empty();
     }
-
+    
+    /**
+     * @brief Publishes the next goal from the target list to the goal topic.
+     * 
+     * Publishes a `geometry_msgs::PoseStamped` message to `/move_base_simple/goal`,
+     * and the corresponding index to `/current_target_index`.
+     */
     void sendNextGoal() {
         if (current_target_index_ >= target_positions_.size()) {
             ROS_INFO_THROTTLE(5, "All targets published. Waiting...");
@@ -102,7 +118,7 @@ private:
         }
 
         geometry_msgs::PoseStamped goal;
-        goal.header.frame_id = "world";  // 请确保和地图 frame 一致，如 "map"
+        goal.header.frame_id = "world";  
         goal.header.stamp = ros::Time::now();
         goal.pose.position.x = target_positions_[current_target_index_].first;
         goal.pose.position.y = target_positions_[current_target_index_].second;
@@ -118,14 +134,23 @@ private:
         index_msg.data = static_cast<int>(current_target_index_);
         pub_index_.publish(index_msg);
     }
+    
 
+    /**
+     * @brief Callback for receiving current vehicle pose.
+     * 
+     * Checks if the current position is close enough to the current target.
+     * If so, it increments the index and publishes the next goal.
+     * 
+     * @param msg Pointer to the current pose message
+     */
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
         double cx = msg->pose.position.x;
         double cy = msg->pose.position.y;
 
         if (!pose_received_) {
             pose_received_ = true;
-            sendNextGoal();  // 初次收到位姿才发目标点
+            sendNextGoal();  
             return;
         }
 

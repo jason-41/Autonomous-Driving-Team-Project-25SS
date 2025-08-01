@@ -36,6 +36,10 @@ public:
         ready_pub_ = nh.advertise<std_msgs::Bool>("/path_planner_ready", 1, true);
     }
 
+    /**
+     * @brief Callback for receiving and processing the occupancy grid map.
+     * Inflates obstacles for safer planning and publishes readiness signal.
+     */
     void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg) {
         map_ = *msg;
         width_ = map_.info.width;
@@ -56,6 +60,11 @@ public:
         }
     }
 
+    /**
+     * @brief Inflate obstacles in the map by a specified radius.
+     * 
+     * @param inflation_radius Radius in cells to inflate obstacles.
+     */
     void inflateMap(int inflation_radius) {
         std::vector<int8_t> inflated_data = map_.data;
         for (int y = 0; y < height_; ++y) {
@@ -79,13 +88,18 @@ public:
         map_.data = inflated_data;
     }
 
+    /**
+     * @brief Callback for receiving the car's current pose.
+     * Checks if near goal to avoid unnecessary planning.
+     * 
+     * @param msg Car pose message.
+     */
     void carPoseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
-        car_pose_ = *msg;  // 保存完整pose
+        car_pose_ = *msg;
         car_x_ = (car_pose_.pose.position.x - origin_x_) / resolution_;
         car_y_ = (car_pose_.pose.position.y - origin_y_) / resolution_;
         car_pose_received_ = true;
 
-        // 检查是否已接近目标点，如果是，则跳过路径规划
         if (goal_received_) {
             double dx = car_x_ - goal_x_;
             double dy = car_y_ - goal_y_;
@@ -99,16 +113,21 @@ public:
             }
         }
 
-        // 若满足条件则执行路径规划
         if (map_received_ && goal_received_ && !goal_reached_)
             computePath();
     }
 
+    /**
+     * @brief Callback for receiving the goal position.
+     * Resets flags and triggers path planning if data available.
+     * 
+     * @param msg Goal pose message.
+     */
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
         goal_x_ = (msg->pose.position.x - origin_x_) / resolution_;
         goal_y_ = (msg->pose.position.y - origin_y_) / resolution_;
         goal_received_ = true;
-        goal_reached_ = false;  // 接收到新目标，重置标志
+        goal_reached_ = false;
         ROS_INFO("Goal grid received: (%d, %d)", goal_x_, goal_y_);
 
         if (map_received_ && car_pose_received_)
@@ -117,6 +136,10 @@ public:
             ROS_WARN("Waiting for map and car pose...");
     }
 
+    /**
+     * @brief Performs A* pathfinding from car position to goal on the occupancy grid.
+     * Publishes the planned path if found.
+     */
     void computePath() {
         if (!inBounds(car_x_, car_y_)) {
             ROS_WARN("Start grid (%d, %d) is out of bounds. Searching for nearby valid start...", car_x_, car_y_);
@@ -183,7 +206,7 @@ public:
                 if (!inBounds(nx, ny)) continue;
 
                 if ((nx == car_x_ && ny == car_y_) || (nx == goal_x_ && ny == goal_y_)) {
-                    // 起点和终点，允许占据，跳过障碍检查
+                    // Allow start and goal positions even if occupied.
                 } else {
                     if (isOccupied(nx, ny)) continue;
                 }
@@ -235,7 +258,7 @@ private:
     ros::Publisher ready_pub_;
     bool ready_published_;
 
-    geometry_msgs::PoseStamped car_pose_;  // 保存车辆完整位姿
+    geometry_msgs::PoseStamped car_pose_;
 
     const std::vector<std::vector<int>> directions_ = {
         {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,-1}, {1,-1}, {-1,1}
@@ -249,7 +272,10 @@ private:
         return x >= 0 && x < width_ && y >= 0 && y < height_;
     }
 
-    // 新增：计算车辆航向角yaw
+    /**
+     * @brief Calculate car's yaw angle from its orientation quaternion.
+     * @return Yaw angle in radians.
+     */
     double getCarYaw() const {
         tf::Quaternion q(
             car_pose_.pose.orientation.x,
@@ -262,7 +288,14 @@ private:
         return yaw;
     }
 
-    // 新增：判断点是否在车头忽略区域内（0.5米宽，1米深）
+    /**
+     * @brief Check if a grid cell is within a small rectangular zone in front of the car.
+     * This zone is ignored for obstacle checking.
+     * 
+     * @param x Grid cell x coordinate.
+     * @param y Grid cell y coordinate.
+     * @return True if within the ignore zone.
+     */
     bool isInFrontIgnoreZone(int x, int y) const {
         double yaw = getCarYaw();
         int cx = car_x_;
@@ -274,24 +307,27 @@ private:
         int rel_x = x - cx;
         int rel_y = y - cy;
 
-        // 车头方向轴上的投影距离
         double forward_dist = rel_x * dx + rel_y * dy;
-        // 横向距离，绝对值
         double lateral_dist = std::abs(-rel_x * dy + rel_y * dx);
 
-        double width_thresh = (1.5 / 2.0) / resolution_;  // 半宽0.25米换算成格子数
-        double forward_thresh = 10.0 / resolution_;       // 1米深度换算成格子数
+        double width_thresh = (1.5 / 2.0) / resolution_;
+        double forward_thresh = 10.0 / resolution_;
 
         return forward_dist > 0 && forward_dist < forward_thresh && lateral_dist < width_thresh;
     }
 
-    // 修改isOccupied，忽略车头前方小区域障碍
+    /**
+     * @brief Check if a grid cell is occupied, ignoring small zone in front of car.
+     * 
+     * @param x Grid cell x coordinate.
+     * @param y Grid cell y coordinate.
+     * @return True if occupied.
+     */
     bool isOccupied(int x, int y) const {
         int idx = toIndex(x, y);
         if (idx < 0 || idx >= (int)map_.data.size())
             return true;
 
-        // 忽略车头前方0.5米宽1米深障碍
         if (isInFrontIgnoreZone(x, y)) {
             return false;
         }
@@ -315,3 +351,4 @@ int main(int argc, char** argv) {
     ros::spin();
     return 0;
 }
+

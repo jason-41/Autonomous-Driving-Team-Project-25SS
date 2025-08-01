@@ -85,12 +85,12 @@ public:
                 double speed_derivative = (speed_error - prev_speed_error_) / dt;
                 prev_speed_error_ = speed_error;
 
-                double Kp_v = 38.0, Ki_v = 0.0, Kd_v = 0.2;
+                double Kp_v = 6.5, Ki_v = 0.1, Kd_v = 0.5;
 
                if (speed_error >= 0) {
                   // when car speed slower than target speed : throttle
                   cmd.Throttle = Kp_v * speed_error + Ki_v * speed_integral_ + Kd_v * speed_derivative;
-                  cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 0.6f);
+                  cmd.Throttle = std::clamp(cmd.Throttle, 0.0f, 1.0f);
                   cmd.Brake = 0.0;
                 } else {
                   // when car speed faster than target speed : brake
@@ -114,7 +114,7 @@ public:
                 double steer_derivative = (steer_error - prev_steer_error_) / dt;
                 prev_steer_error_ = steer_error;
 
-                double Kp_s = 1.0, Ki_s = 0.1, Kd_s = 0.05;
+                double Kp_s = 1.63, Ki_s = 0.02, Kd_s = 0.15;
                 cmd.Steering = Kp_s * steer_error + Ki_s * steer_integral_ + Kd_s * steer_derivative;
                 cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
 

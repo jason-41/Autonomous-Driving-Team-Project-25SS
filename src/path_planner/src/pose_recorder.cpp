@@ -9,13 +9,11 @@ public:
         ros::NodeHandle nh;
         sub_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 10, &PoseRecorder::poseCallback, this);
 
-        // 打开文件，准备写入（追加模式）
         file_.open("/tmp/car_positions.txt", std::ios::out | std::ios::app);
         if (!file_.is_open()) {
             ROS_ERROR("Failed to open file for writing.");
             ros::shutdown();
         } else {
-            // 写入表头（如果文件为空）
             file_ << "x,y\n";
             file_.flush();
         }
@@ -33,12 +31,19 @@ private:
     bool first_msg_received_;
     double last_x_, last_y_;
 
+    /**
+     * @brief Callback function to process received pose messages.
+     * 
+     * Records the pose to a file if the car has moved more than 10 meters
+     * from the last recorded position.
+     * 
+     * @param msg Pointer to the received PoseStamped message
+     */
     void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
         double x = msg->pose.position.x;
         double y = msg->pose.position.y;
 
         if (!first_msg_received_) {
-            // 第一次收到消息，直接记录
             last_x_ = x;
             last_y_ = y;
             first_msg_received_ = true;
@@ -48,7 +53,7 @@ private:
         }
 
         double dist = std::hypot(x - last_x_, y - last_y_);
-        if (dist >= 10.0) {  // 移动超过10米才记录
+        if (dist >= 10.0) {
             last_x_ = x;
             last_y_ = y;
             recordPosition(x, y);
@@ -56,10 +61,16 @@ private:
         }
     }
 
+    /**
+     * @brief Writes the current (x, y) position to the output file.
+     * 
+     * @param x X coordinate
+     * @param y Y coordinate
+     */
     void recordPosition(double x, double y) {
         if (file_.is_open()) {
             file_ << x << "," << y << "\n";
-            file_.flush();  // 立即写入文件，防止丢失
+            file_.flush();
         }
     }
 };
@@ -70,3 +81,4 @@ int main(int argc, char** argv) {
     ros::spin();
     return 0;
 }
+
