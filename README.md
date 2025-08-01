@@ -27,6 +27,11 @@ No external third-party numerical libraries are required. Although OpenCV is bei
    sudo apt update
    sudo apt install ros-noetic-octomap-server
    ```
+   (optional)
+   for visualization in RViz:
+    ```bash
+    sudo apt install ros-noetic-octomap-rviz-plugins
+    ```
 
 2. **Build the workspace**  
    ```bash
