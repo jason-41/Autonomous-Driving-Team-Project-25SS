@@ -5,7 +5,7 @@ This repository implements a lightweight ROS1-based autonomous driving stack, in
 
 ## Warning
   **`In case the performance is not as expected`**  
-  Due to different CPU, memory and systems, we have observe a considerable difference in the performance on different computers.
+  Due to different CPU, memory and systems, we have observed a considerable difference in the performance on different computers.
   It is worth noticing that the car performs much better on a native Linux installation than on WSL2 and virtual machines, even on the same hardware.
   In the repository there is a .mp4 file: best_practice.mp4 - the video recording of our best practice.
   This may be seen as a reference of our best work.
