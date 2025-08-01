@@ -12,16 +12,19 @@
 class ShortTermPlanner {
 public:
     ShortTermPlanner()
-        : current_target_index_(0), goal_sent_(false), pose_received_(false) {
+        : current_target_index_(0), goal_sent_(false), pose_received_(false), planner_ready_(false) {
         ros::NodeHandle nh;
-        
-        ROS_INFO("Waiting for /path_planner_ready...");
-        auto ready_msg = ros::topic::waitForMessage<std_msgs::Bool>("/path_planner_ready", nh);
-        if (ready_msg && ready_msg->data) {
-            ROS_INFO("/path_planner_ready received, starting short term planner.");
-        } else {
-            ROS_WARN("Did not receive /path_planner_ready, continuing anyway.");
+
+        // Subscribe to /path_planner_ready
+        ready_sub_ = nh.subscribe("/path_planner_ready", 1, &ShortTermPlanner::readyCallback, this);
+
+        ROS_INFO("Waiting for /path_planner_ready (latched topic)...");
+        ros::Rate rate(10);
+        while (ros::ok() && !planner_ready_) {
+            ros::spinOnce();
+            rate.sleep();
         }
+        ROS_INFO("/path_planner_ready received, starting short term planner.");
 
         sub_pose_ = nh.subscribe("/Unity_ROS_message_Rx/OurCar/CoM/pose", 1, &ShortTermPlanner::poseCallback, this);
         pub_goal_ = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1);
@@ -40,13 +43,14 @@ public:
 
 private:
     ros::Subscriber sub_pose_;
+    ros::Subscriber ready_sub_;
     ros::Publisher pub_goal_;
     ros::Publisher pub_index_;
     std::vector<std::pair<double, double>> target_positions_;  
     size_t current_target_index_;
     bool goal_sent_;
     bool pose_received_;
-    
+    bool planner_ready_;
 
     /**
      * @brief Loads target positions from a CSV file.
@@ -57,6 +61,12 @@ private:
      * @param filepath Path to the target positions file
      * @return true if at least one valid target is loaded, false otherwise
      */
+    void readyCallback(const std_msgs::Bool::ConstPtr& msg) {
+        if (msg->data) {
+            planner_ready_ = true;
+        }
+    }
+    
     bool loadTargetPositions(const std::string& filepath) {
         std::ifstream file(filepath);
         if (!file.is_open()) {
