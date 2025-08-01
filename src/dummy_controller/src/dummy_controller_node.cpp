@@ -31,8 +31,8 @@ public:
 
     void run()
     {
-        ros::Rate loop_rate(10);
-        float dt = 0.1;
+        ros::Rate loop_rate(25);
+        float dt = 0.04;
 
         while (ros::ok())
         {
@@ -114,7 +114,7 @@ public:
                 double steer_derivative = (steer_error - prev_steer_error_) / dt;
                 prev_steer_error_ = steer_error;
 
-                double Kp_s = 1.63, Ki_s = 0.02, Kd_s = 0.15;
+                double Kp_s = 1.67, Ki_s = 0.018, Kd_s = 0.15;
                 cmd.Steering = Kp_s * steer_error + Ki_s * steer_integral_ + Kd_s * steer_derivative;
                 cmd.Steering = std::clamp(cmd.Steering, -1.0f, 1.0f);
 

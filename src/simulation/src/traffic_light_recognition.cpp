@@ -336,7 +336,7 @@ private:
           uv_rgb.x += 8;
           uv_rgb.y -= 14;} else{
           uv_rgb.x += 5;
-          uv_rgb.y += 6;
+          uv_rgb.y += 10;
           }
 
         
