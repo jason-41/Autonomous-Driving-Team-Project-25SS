@@ -27,6 +27,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(
         FILES
         VehicleControl.msg
+        TrafficLight.msg
 )
 generate_messages(
         DEPENDENCIES
