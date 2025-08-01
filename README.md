@@ -18,7 +18,7 @@ This repository implements a lightweight ROS1-based autonomous driving stack, in
   - Core ROS packages: `roscpp`, `std_msgs`, `geometry_msgs`, `nav_msgs`, `tf`  
   - `octomap_server` (for optional 3D mapping upstream)  
 
-No external third-party numerical libraries are required; all logic uses standard ROS messages and C++ STL.
+No external third-party numerical libraries are required, although OpenCV is being used de facto, it does not require installation by hand.
 
 ## Installation & Build
 
