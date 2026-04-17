@@ -4,7 +4,7 @@
 This repository implements a lightweight ROS1-based autonomous driving stack, including global path planning (A*), short-term goal sequencing, trajectory generation, and a PID-based controller. A single setup script launches all necessary components and the vehicle simulation automatically.
 The ROS-Unity bridge (TCP sensor streaming + UDP command transmission) with configurable simulation parameters and multi-node launch workflow can be used for reproducible experiments.  
 ### My contribution：
-Implemented the short_term_planner, trajectory generator and the simple PID controller.
+Implemented the trajectory generator and the simple PID controller.
 
 ## Warning
   **`In case the performance is not as expected`**  
